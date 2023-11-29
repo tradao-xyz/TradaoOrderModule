@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interfaces/BaseOrderUtils.sol";
 import "./interfaces/IDatastore.sol";
 import "./interfaces/Keys.sol";
@@ -10,27 +11,42 @@ import "./interfaces/Precision.sol";
 import "./interfaces/IDatastore.sol";
 import "./interfaces/Enum.sol";
 import "./interfaces/IModuleManager.sol";
+import "./interfaces/ISmartAccountFactory.sol";
 
 //Arbitrum configs
 contract Gmxv2OrderModule is Ownable {
     address public operator;
-
-    mapping(address => uint256) public tokenPrice;
+    uint256 public ethPrice;
+    uint256 public ethPriceMultiplier = 10 ** 12;
 
     uint256 private constant MAXPRICEBUFFERACTOR = 120; // 120%, require(inputETHPrice < priceFeedPrice * 120%)
     uint256 private constant PRICEUPDATEACTOR = 115; // 115%, threshhold to update the ETH priceFeed price
     uint256 private constant MAXTXGASRATIO = 50; // 50%, require(inputTxGas/ExecutionFeeGasLimit < 50%)
+    uint256 private constant MAX_AA_DEPLOY_GAS = 4000000 gwei; //todo reconfirm
 
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address private constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
     IDataStore private constant DATASTORE = IDataStore(0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8);
     bytes32 private constant REFERRALCODE = 0x74726164616f0000000000000000000000000000000000000000000000000000; //tradao
-    bytes4 private constant SETREFERRALCODESELECTOR = 0xe1e01bf3; //bytes4(keccak256("setTraderReferralCodeByUser(bytes32)"))
-    bytes private constant SETREFERRALCODECALLDATA = abi.encodeWithSelector(SETREFERRALCODESELECTOR, REFERRALCODE);
     address private constant REFERRALSTORAGE = 0xe6fab3F0c7199b0d34d7FbE83394fc0e0D06e99d;
+    ISmartAccountFactory private constant BICONOMY_FACTORY =
+        ISmartAccountFactory(0x000000a56Aaca3e9a4C479ea6b6CD0DbcB6634F5);
+    address private constant ENTRYPOINT_ADDRESS = 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789;
+    bytes private constant SETREFERRALCODECALLDATA =
+        abi.encodeWithSignature("setTraderReferralCodeByUser(bytes32)", REFERRALCODE);
+    bytes private constant MODULE_SETUP_DATA = abi.encodeWithSignature("getModuleAddress()");
+    address private constant BICONOMY_MODULE_SETUP = address(0); // todo
+    bytes4 private constant OWNERSHIPT_INIT_SELECTOR = 0x2ede3bc0; //bytes4(keccak256("initForSmartAccount(address)"))
+    address private constant DEFAULT_ECDSA_OWNERSHIP_MODULE = 0x0000001c5b32F37F5beA87BDD5374eB2aC54eA8e;
+    bytes32 private constant ETH_MULTIPLIER_KEY = 0x007b50887d7f7d805ee75efc0a60f8aaee006442b047c7816fc333d6d083cae0; //keccak256(abi.encode(keccak256(abi.encode("PRICE_FEED_MULTIPLIER")), address(WETH)))
+    bytes32 private constant ETH_PRICE_FEED_KEY = 0xb1bca3c71fe4192492fabe2c35af7a68d4fc6bbd2cfba3e35e3954464a7d848e; //keccak256(abi.encode(keccak256(abi.encode("PRICE_FEED")), address(WETH)))
+    uint256 private ETH_MULTIPLIER = 10 ** 18;
+    uint256 private USDC_MULTIPLIER = 10 ** 6;
+    address private constant ORDER_VAULT = 0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5;
 
     event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
     event UpdateTokenPrice(address indexed token, uint256 newPrice);
+    event NewSmartAccount(address indexed creator, address userEOA, address smartAccount);
 
     error UnsupportedOrderType();
 
@@ -53,17 +69,22 @@ contract Gmxv2OrderModule is Ownable {
         emit OperatorTransferred(oldOperator, newOperator);
     }
 
+    //single order, could contain trigger price
     function newOrder() external onlyOperator {}
-    function newOrders() external onlyOperator {}
-    function cancelOrders(address smartAccount, bytes32 key) external onlyOperator {}
 
-    function _calcGasFee(uint256 ethPrice, Order.OrderType orderType, uint256 txGas)
+    //copy trading orders
+    function newOrders() external onlyOperator {}
+
+    //cancel single order
+    function cancelOrder(address smartAccount, bytes32 key) external onlyOperator {}
+
+    function _calcGasFee(uint256 _ethPrice, Order.OrderType orderType, uint256 txGas)
         internal
         returns (uint256 txGasFee, uint256 executionFee)
     {
-        require(ethPrice < tokenPrice[WETH], "ethPrice");
-        if (ethPrice * 100 / tokenPrice[WETH] >= PRICEUPDATEACTOR) {
-            updateTokenPrice(WETH);
+        require(_ethPrice * 100 < ethPrice * MAXPRICEBUFFERACTOR, "ethPrice");
+        if (_ethPrice * 100 >= ethPrice * PRICEUPDATEACTOR) {
+            updateTokenPrice();
         }
 
         uint256 executionFeeGasLimit;
@@ -74,7 +95,7 @@ contract Gmxv2OrderModule is Ownable {
         } else {
             revert UnsupportedOrderType();
         }
-        require(txGas < executionFeeGasLimit * MAXTXGASRATIO / 100, "txGas");
+        require(txGas * 100 < executionFeeGasLimit * MAXTXGASRATIO, "txGas");
 
         txGasFee = txGas * tx.gasprice;
         executionFee = executionFeeGasLimit * tx.gasprice;
@@ -97,8 +118,8 @@ contract Gmxv2OrderModule is Ownable {
         address smartAccount,
         uint256 sizeDeltaUsd,
         uint256 initialCollateralDeltaAmount,
-        uint256 triggerPrice,
-        uint256 acceptablePrice
+        uint256 acceptablePrice,
+        uint256 executionFee
     ) internal view returns (BaseOrderUtils.CreateOrderParams memory) {
         if (msg.value > 0) {
             //1. transfer execution fee ETH from this contract to GMX Vault
@@ -116,9 +137,8 @@ contract Gmxv2OrderModule is Ownable {
 
         params.numbers.sizeDeltaUsd = sizeDeltaUsd;
         params.numbers.initialCollateralDeltaAmount = initialCollateralDeltaAmount;
-        params.numbers.triggerPrice = triggerPrice;
         params.numbers.acceptablePrice = acceptablePrice;
-        // params.numbers.executionFee = 0;
+        params.numbers.executionFee = executionFee;
         params.numbers.callbackGasLimit = 0;
         params.numbers.minOutputAmount = 0;
 
@@ -133,6 +153,37 @@ contract Gmxv2OrderModule is Ownable {
         IModuleManager(smartAccount).execTransactionFromModule(
             REFERRALSTORAGE, 0, SETREFERRALCODECALLDATA, Enum.Operation.Call, 0
         );
+    }
+
+    function deployAA(address userEOA, uint256 deployGas) external {
+        address aa = _deployAA(userEOA);
+        if (msg.sender == operator) {
+            require(deployGas <= MAX_AA_DEPLOY_GAS, "gas");
+            //transfer gas fee to TinySwap...
+            uint256 usdcAmount =
+                deployGas * tx.gasprice * ethPrice * USDC_MULTIPLIER / ETH_MULTIPLIER / ethPriceMultiplier;
+            _transferUsdcToOperator(aa, usdcAmount);
+        }
+        emit NewSmartAccount(msg.sender, userEOA, aa);
+    }
+
+    function _transferUsdcToOperator(address aa, uint256 amount) internal returns (bool isSuccess) {
+        bytes memory data = abi.encodeWithSelector(IERC20.transfer.selector, operator, amount);
+        isSuccess = IModuleManager(aa).execTransactionFromModule(USDC, 0, data, Enum.Operation.Call);
+    }
+
+    function _deployAA(address userEOA) internal returns (address) {
+        uint256 index = uint256(uint160(userEOA));
+        address aa = BICONOMY_FACTORY.deployCounterFactualAccount(BICONOMY_MODULE_SETUP, MODULE_SETUP_DATA, index);
+        bytes memory data = abi.encodeWithSelector(
+            IModuleManager.setupAndEnableModule.selector,
+            DEFAULT_ECDSA_OWNERSHIP_MODULE,
+            abi.encodeWithSelector(OWNERSHIPT_INIT_SELECTOR, userEOA)
+        );
+        bool isSuccess = IModuleManager(aa).execTransactionFromModule(aa, 0, data, Enum.Operation.Call);
+        require(isSuccess, "500");
+
+        return aa;
     }
 
     function getIncreaseExecutionFeeGasLimit() public view returns (uint256) {
@@ -180,16 +231,14 @@ contract Gmxv2OrderModule is Ownable {
     }
 
     // @dev get and update token price from Oracle
-    function updateTokenPrice(address token) public returns (uint256 newPrice) {
-        newPrice = getPriceFeedPrice(DATASTORE, token);
-        tokenPrice[token] = newPrice;
-        emit UpdateTokenPrice(token, newPrice);
+    function updateTokenPrice() public returns (uint256 newPrice) {
+        newPrice = getPriceFeedPrice(DATASTORE);
+        ethPrice = newPrice;
+        emit UpdateTokenPrice(WETH, newPrice);
     }
 
-    function getPriceFeedPrice(IDataStore dataStore, address token) public view returns (uint256) {
-        address priceFeedAddress = dataStore.getAddress(Keys.priceFeedKey(token));
-        require(priceFeedAddress != address(0), "500");
-
+    function getPriceFeedPrice(IDataStore dataStore) public view returns (uint256) {
+        address priceFeedAddress = dataStore.getAddress(ETH_PRICE_FEED_KEY);
         IPriceFeed priceFeed = IPriceFeed(priceFeedAddress);
 
         (
@@ -206,7 +255,7 @@ contract Gmxv2OrderModule is Ownable {
         require(_price > 0, "priceFeed");
 
         uint256 price = SafeCast.toUint256(_price);
-        uint256 precision = getPriceFeedMultiplier(dataStore, token);
+        uint256 precision = getPriceFeedMultiplier(dataStore);
 
         uint256 adjustedPrice = Precision.mulDiv(price, precision, Precision.FLOAT_PRECISION);
 
@@ -225,11 +274,18 @@ contract Gmxv2OrderModule is Ownable {
     // @param dataStore DataStore
     // @param token the token to get the price feed multiplier for
     // @return the price feed multipler
-    function getPriceFeedMultiplier(IDataStore dataStore, address token) public view returns (uint256) {
-        uint256 multiplier = dataStore.getUint(Keys.priceFeedMultiplierKey(token));
+    function getPriceFeedMultiplier(IDataStore dataStore) public view returns (uint256) {
+        uint256 multiplier = dataStore.getUint(ETH_MULTIPLIER_KEY);
 
         require(multiplier > 0, "500");
 
         return multiplier;
+    }
+
+    function updateEthPriceMultiplier() external {
+        address priceFeedAddress = IDataStore(DATASTORE).getAddress(ETH_PRICE_FEED_KEY);
+        IPriceFeed priceFeed = IPriceFeed(priceFeedAddress);
+        uint256 priceFeedDecimal = uint256(IPriceFeed(priceFeed).decimals());
+        ethPriceMultiplier = (10 ** priceFeedDecimal) * getPriceFeedMultiplier(DATASTORE) / (10 ** 30);
     }
 }
