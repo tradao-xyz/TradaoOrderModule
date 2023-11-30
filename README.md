@@ -1,13 +1,13 @@
-## Foundry
+## Tradao Order Module
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+**A module to authorize owner to create orders on behalf of the user.**
 
-Foundry consists of:
+The module complies to Biconomy Abstract Account Version 2.0.0.
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+Contracts consists of:
+
+-   **Gmxv2OrderModule**: Verify authorization, build order params, pay gas, send collateral to GMX Vault to create order on behalf of the user.
+-   **BiconomyModuleSetup**: Return module address.
 
 ## Documentation
 
