@@ -8,10 +8,6 @@ pragma solidity ^0.8.20;
  * @author Chirag Titiya - <chirag@biconomy.io>
  */
 interface ISmartAccountFactory {
-    // Events
-    event AccountCreation(address indexed account, address indexed initialAuthModule, uint256 indexed index);
-    event AccountCreationWithoutIndex(address indexed account, address indexed initialAuthModule);
-
     /**
      * @notice Deploys account using create2 and points it to basicImplementation
      * @param moduleSetupContract address of the module setup contract
@@ -20,16 +16,6 @@ interface ISmartAccountFactory {
      * @return proxy address of the deployed account
      */
     function deployCounterFactualAccount(address moduleSetupContract, bytes calldata moduleSetupData, uint256 index)
-        external
-        returns (address proxy);
-
-    /**
-     * @notice Deploys account using create and points it to _implementation
-     * @param moduleSetupContract address of the module setup contract
-     * @param moduleSetupData data for module setup contract
-     * @return proxy address of the deployed account
-     */
-    function deployAccount(address moduleSetupContract, bytes calldata moduleSetupData)
         external
         returns (address proxy);
 
@@ -45,10 +31,4 @@ interface ISmartAccountFactory {
         bytes calldata moduleSetupData,
         uint256 index
     ) external view returns (address _account);
-
-    /**
-     * @dev Allows to retrieve the creation code used for the Proxy deployment.
-     * @return The creation code for the Proxy.
-     */
-    function accountCreationCode() external pure returns (bytes memory);
 }

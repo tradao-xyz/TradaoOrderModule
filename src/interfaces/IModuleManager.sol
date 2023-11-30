@@ -9,73 +9,6 @@ import {Enum} from "./Enum.sol";
  *        fallback calls are not delegated to the `handler` so they can not directly change Smart Account storage
  */
 interface IModuleManager {
-    // Events
-    event EnabledModule(address module);
-    event DisabledModule(address module);
-    event ExecutionFromModuleSuccess(address indexed module);
-    event ExecutionFromModuleFailure(address indexed module);
-    event ModuleTransaction(address module, address to, uint256 value, bytes data, Enum.Operation operation);
-
-    /**
-     * @notice Throws when trying to initialize module manager that already been initialized
-     */
-    error ModulesAlreadyInitialized();
-
-    /**
-     * @notice Throws when a delegatecall in course of module manager initialization has failed
-     */
-    error ModulesSetupExecutionFailed();
-
-    /**
-     * @notice Throws when address(0) or SENTINEL_MODULES constant has been provided as a module address
-     * @param module Module address provided
-     */
-    error ModuleCannotBeZeroOrSentinel(address module);
-
-    /**
-     * @notice Throws when trying to enable module that has already been enabled
-     * @param module Module address provided
-     */
-    error ModuleAlreadyEnabled(address module);
-
-    /**
-     * @notice Throws when module and previous module mismatch
-     * @param expectedModule expected module at modules[prevModule]
-     * @param returnedModule the module that has been found at modules[prevModule]
-     * @param prevModule previous module address provided at call
-     */
-    error ModuleAndPrevModuleMismatch(address expectedModule, address returnedModule, address prevModule);
-
-    /**
-     * @notice Throws when trying to execute transaction from module that is not enabled
-     * @param module Module address provided
-     */
-    error ModuleNotEnabled(address module);
-
-    /**
-     * @notice Throws when data for executeBatchCall provided in wrong format (i.e. empty array or lengths mismatch)
-     * @param destLength length of destination contracts array
-     * @param valueLength length of txn values array
-     * @param funcLength length of function signatures array
-     * @param operationLength length of operation types array. 0 if there's no operations
-     */
-    error WrongBatchProvided(uint256 destLength, uint256 valueLength, uint256 funcLength, uint256 operationLength);
-
-    /**
-     * @dev Adds a module to the allowlist.
-     * @notice This SHOULD only be done via userOp or a selfcall.
-     */
-    function enableModule(address module) external;
-
-    /**
-     * @dev Removes a module from the allowlist.
-     * @notice This can only be done via a wallet transaction.
-     * @notice Disables the module `module` for the wallet.
-     * @param prevModule Module that pointed to the module to be removed in the linked list
-     * @param module Module to be removed.
-     */
-    function disableModule(address prevModule, address module) external;
-
     /**
      * @dev Setups module for this Smart Account and enables it.
      * @notice This SHOULD only be done via userOp or a selfcall.
@@ -141,16 +74,4 @@ interface IModuleManager {
      * @return True if the module is enabled
      */
     function isModuleEnabled(address module) external view returns (bool);
-
-    /**
-     * @dev Returns array of modules. Useful for a widget
-     * @param start Start of the page.
-     * @param pageSize Maximum number of modules that should be returned.
-     * @return array Array of modules.
-     * @return next Start of the next page.
-     */
-    function getModulesPaginated(address start, uint256 pageSize)
-        external
-        view
-        returns (address[] memory array, address next);
 }

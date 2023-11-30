@@ -3,19 +3,11 @@
 pragma solidity ^0.8.0;
 
 import "./Order.sol";
-import "../market/Market.sol";
-
-import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 // @title Order
 // @dev Library for common order functions used in OrderUtils, IncreaseOrderUtils
 // DecreaseOrderUtils, SwapOrderUtils
 library BaseOrderUtils {
-    using SafeCast for int256;
-    using SafeCast for uint256;
-
-    using Order for Order.Props;
-
     // @dev CreateOrderParams struct used in createOrder to avoid stack
     // too deep errors
     //
