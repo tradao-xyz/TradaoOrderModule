@@ -9,10 +9,7 @@ contract BiconomyModuleSetup is Ownable {
 
     event ModuleUpdated(address prev, address current);
 
-    constructor(address _module) Ownable(msg.sender) {
-        module = _module;
-        emit ModuleUpdated(address(0), _module);
-    }
+    constructor() Ownable(msg.sender) {}
 
     function getModuleAddress() external view returns (address) {
         return module;
