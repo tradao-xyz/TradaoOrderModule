@@ -47,7 +47,7 @@ contract Gmxv2OrderModule is Ownable {
     IExchangeRouter private constant EXCHANGE_ROUTER = IExchangeRouter(0x7C68C7866A64FA2160F78EEaE12217FFbf871fa8);
 
     event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
-    event UpdateTokenPrice(address indexed token, uint256 newPrice);
+    event UpdateEthPrice(uint256 newPrice);
     event NewSmartAccount(address indexed creator, address userEOA, address smartAccount);
     event OrderCreated(
         address indexed aa,
@@ -64,6 +64,7 @@ contract Gmxv2OrderModule is Ownable {
         uint256 sizeDelta,
         uint256 collateralDelta,
         uint256 acceptablePrice,
+        uint256 triggerPrice,
         Enum.FailureReason reason
     );
     event OrderCancelled(address indexed aa, bytes32 orderKey);
@@ -75,7 +76,7 @@ contract Gmxv2OrderModule is Ownable {
         uint256 sizeDelta,
         uint256 collateralDelta,
         uint256 acceptablePrice,
-        Enum.FailureReason reason
+        uint256 triggerPrice
     );
 
     struct OrderParam {
@@ -155,6 +156,7 @@ contract Gmxv2OrderModule is Ownable {
                 _orderParam.sizeDeltaUsd,
                 _orderParam.initialCollateralDeltaAmount,
                 _orderParam.acceptablePrice,
+                triggerPrice,
                 Enum.FailureReason.PayGasFailed
             );
             return 0;
@@ -169,6 +171,7 @@ contract Gmxv2OrderModule is Ownable {
                     _orderParam.sizeDeltaUsd,
                     _orderParam.initialCollateralDeltaAmount,
                     _orderParam.acceptablePrice,
+                    triggerPrice,
                     Enum.FailureReason.TransferCollateralToVaultFailed
                 );
                 return 0;
@@ -190,7 +193,7 @@ contract Gmxv2OrderModule is Ownable {
                 _orderParam.sizeDeltaUsd,
                 _orderParam.initialCollateralDeltaAmount,
                 _orderParam.acceptablePrice,
-                Enum.FailureReason.CreateOrderFailed
+                triggerPrice
             );
         } else {
             emit OrderCreated(
@@ -235,6 +238,7 @@ contract Gmxv2OrderModule is Ownable {
                     _orderParam.sizeDeltaUsd,
                     _orderParam.initialCollateralDeltaAmount,
                     _orderParam.acceptablePrice,
+                    0,
                     Enum.FailureReason.PayGasFailed
                 );
                 continue;
@@ -250,6 +254,7 @@ contract Gmxv2OrderModule is Ownable {
                         _orderParam.sizeDeltaUsd,
                         _orderParam.initialCollateralDeltaAmount,
                         _orderParam.acceptablePrice,
+                        0,
                         Enum.FailureReason.TransferCollateralToVaultFailed
                     );
                     continue;
@@ -270,6 +275,7 @@ contract Gmxv2OrderModule is Ownable {
                     _orderParam.sizeDeltaUsd,
                     _orderParam.initialCollateralDeltaAmount,
                     _orderParam.acceptablePrice,
+                    0,
                     Enum.FailureReason.CreateOrderFailed
                 );
             } else {
@@ -450,7 +456,7 @@ contract Gmxv2OrderModule is Ownable {
     function updateTokenPrice() public returns (uint256 newPrice) {
         newPrice = getPriceFeedPrice(DATASTORE);
         ethPrice = newPrice;
-        emit UpdateTokenPrice(WETH, newPrice);
+        emit UpdateEthPrice(newPrice);
     }
 
     function getPriceFeedPrice(IDataStore dataStore) public view returns (uint256) {
