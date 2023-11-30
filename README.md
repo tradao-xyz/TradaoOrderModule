@@ -9,9 +9,9 @@ Contracts consists of:
 -   **Gmxv2OrderModule**: Verify authorization, build order params, pay gas, send collateral to GMX Vault to create order on behalf of the user.
 -   **BiconomyModuleSetup**: Return module address.
 
-## Documentation
+## Workflow
 
-https://book.getfoundry.sh/
+![Alt text](./doc/workflow.png?raw=true "Workflow")
 
 ## Usage
 
