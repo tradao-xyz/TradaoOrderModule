@@ -25,7 +25,8 @@ contract Gmxv2OrderModule is Ownable {
     uint256 private constant MAXPRICEBUFFERACTOR = 120; // 120%, require(inputETHPrice < priceFeedPrice * 120%)
     uint256 private constant PRICEUPDATEACTOR = 115; // 115%, threshhold to update the ETH priceFeed price
     uint256 private constant MAXTXGASRATIO = 50; // 50%, require(inputTxGas/ExecutionFeeGasLimit < 50%)
-    uint256 private constant MAX_AA_DEPLOY_GAS = 4000000 gwei; //todo reconfirm
+    uint256 private constant MAX_AA_DEPLOY_GAS = 4000000; //todo reconfirm
+    uint256 private constant MAX_CANCEL_GAS = 4000000;
 
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address private constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
@@ -50,28 +51,38 @@ contract Gmxv2OrderModule is Ownable {
     event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
     event UpdateTokenPrice(address indexed token, uint256 newPrice);
     event NewSmartAccount(address indexed creator, address userEOA, address smartAccount);
-    event PayGasFailed(address indexed aa, uint256 indexed positionId);
     event OrderCreated(
         address indexed aa,
         uint256 indexed positionId,
-        bytes32 orderKey,
         uint256 sizeDelta,
         uint256 collateralDelta,
-        uint256 acceptablePrice
+        uint256 acceptablePrice,
+        bytes32 orderKey,
+        uint256 triggerPrice
     );
     event OrderCreationFailed(
         address indexed aa,
         uint256 indexed positionId,
         uint256 sizeDelta,
         uint256 collateralDelta,
-        uint256 acceptablePrice
+        uint256 acceptablePrice,
+        Enum.FailureReason reason
     );
+    event OrderCancelled(address indexed aa, bytes32 orderKey);
 
     error UnsupportedOrderType();
+    error OrderCreationError(
+        address aa,
+        uint256 positionId,
+        uint256 sizeDelta,
+        uint256 collateralDelta,
+        uint256 acceptablePrice,
+        Enum.FailureReason reason
+    );
 
     struct OrderParam {
         uint256 sizeDeltaUsd;
-        uint256 initialCollateralDeltaAmount;
+        uint256 initialCollateralDeltaAmount; //for increase, indicate USDC transfer amount; for decrease, set to createOrderParams
         uint256 acceptablePrice;
         address smartAccount;
     }
@@ -85,7 +96,7 @@ contract Gmxv2OrderModule is Ownable {
     }
 
     //Owner should be transfer to a TimelockController
-    constructor(address initialOwner, address initialOperator) Ownable(initialOwner) {
+    constructor(address initialOperator) Ownable(msg.sender) {
         operator = initialOperator;
     }
 
@@ -95,8 +106,93 @@ contract Gmxv2OrderModule is Ownable {
         emit OperatorTransferred(oldOperator, newOperator);
     }
 
+    //cancel single order
+    function cancelOrder(address smartAccount, bytes32 key) external onlyOperator returns (bool success) {
+        uint256 startGas = gasleft();
+        require(key > 0, "key");
+
+        bytes memory data = abi.encodeWithSelector(EXCHANGE_ROUTER.cancelOrder.selector, key);
+        success = IModuleManager(smartAccount).execTransactionFromModule(
+            address(EXCHANGE_ROUTER), 0, data, Enum.Operation.Call
+        );
+        if (success) {
+            emit OrderCancelled(smartAccount, key);
+        }
+
+        uint256 gasUsed = adjustGasUsage(DATASTORE, gasleft() - startGas);
+        _aaTransferEth(smartAccount, gasUsed * tx.gasprice, operator);
+    }
+
     //single order, could contain trigger price
-    function newOrder() external onlyOperator {}
+    function newOrder(
+        uint256 triggerPrice,
+        uint256 positionId,
+        uint256 _ethPrice,
+        uint256 _txGas,
+        address market,
+        Order.OrderType orderType,
+        bool isLong,
+        OrderParam memory _orderParam
+    ) external onlyOperator returns (bytes32 orderKey) {
+        (uint256 _txGasFee, uint256 _executionGasFee) = _calcGas(_ethPrice, orderType, _txGas);
+        bool isIncreaseOrder = BaseOrderUtils.isIncreaseOrder(orderType);
+        bool isSuccess = _payGas(_orderParam.smartAccount, _txGasFee, _executionGasFee, _ethPrice);
+        if (!isSuccess) {
+            emit OrderCreationFailed(
+                _orderParam.smartAccount,
+                positionId,
+                _orderParam.sizeDeltaUsd,
+                _orderParam.initialCollateralDeltaAmount,
+                _orderParam.acceptablePrice,
+                Enum.FailureReason.PayGasFailed
+            );
+            return 0;
+        }
+
+        if (isIncreaseOrder && _orderParam.initialCollateralDeltaAmount > 0) {
+            isSuccess = _aaTransferUsdc(_orderParam.smartAccount, _orderParam.initialCollateralDeltaAmount, ORDER_VAULT);
+            if (!isSuccess) {
+                emit OrderCreationFailed(
+                    _orderParam.smartAccount,
+                    positionId,
+                    _orderParam.sizeDeltaUsd,
+                    _orderParam.initialCollateralDeltaAmount,
+                    _orderParam.acceptablePrice,
+                    Enum.FailureReason.TransferCollateralToVaultFailed
+                );
+                return 0;
+            }
+        }
+
+        //build orderParam
+        BaseOrderUtils.CreateOrderParams memory cop;
+        _buildOrderCommonPart(_executionGasFee, market, orderType, isLong, cop);
+        _buildOrderCustomPart(_orderParam, cop);
+        cop.numbers.triggerPrice = triggerPrice;
+
+        //send order
+        orderKey = _aaCreateOrder(cop);
+        if (orderKey == 0) {
+            revert OrderCreationError(
+                _orderParam.smartAccount,
+                positionId,
+                _orderParam.sizeDeltaUsd,
+                _orderParam.initialCollateralDeltaAmount,
+                _orderParam.acceptablePrice,
+                Enum.FailureReason.CreateOrderFailed
+            );
+        } else {
+            emit OrderCreated(
+                _orderParam.smartAccount,
+                positionId,
+                _orderParam.sizeDeltaUsd,
+                _orderParam.initialCollateralDeltaAmount,
+                _orderParam.acceptablePrice,
+                orderKey,
+                triggerPrice
+            );
+        }
+    }
 
     /**
      *   copy trading orders.
@@ -120,18 +216,33 @@ contract Gmxv2OrderModule is Ownable {
         bool isIncreaseOrder = BaseOrderUtils.isIncreaseOrder(orderType);
         for (uint256 i; i < len; i++) {
             OrderParam memory _orderParam = orderParams[i];
-            //todo use try catch to constrain the revert region
             bool isSuccess = _payGas(_orderParam.smartAccount, _txGasFee, _executionGasFee, _ethPrice);
             if (!isSuccess) {
-                emit PayGasFailed(_orderParam.smartAccount, positionId);
-                break;
+                emit OrderCreationFailed(
+                    _orderParam.smartAccount,
+                    positionId,
+                    _orderParam.sizeDeltaUsd,
+                    _orderParam.initialCollateralDeltaAmount,
+                    _orderParam.acceptablePrice,
+                    Enum.FailureReason.PayGasFailed
+                );
+                continue;
             }
 
             if (isIncreaseOrder && _orderParam.initialCollateralDeltaAmount > 0) {
-                require(
-                    _aaTransferUsdc(_orderParam.smartAccount, _orderParam.initialCollateralDeltaAmount, ORDER_VAULT),
-                    "col"
-                );
+                isSuccess =
+                    _aaTransferUsdc(_orderParam.smartAccount, _orderParam.initialCollateralDeltaAmount, ORDER_VAULT);
+                if (!isSuccess) {
+                    emit OrderCreationFailed(
+                        _orderParam.smartAccount,
+                        positionId,
+                        _orderParam.sizeDeltaUsd,
+                        _orderParam.initialCollateralDeltaAmount,
+                        _orderParam.acceptablePrice,
+                        Enum.FailureReason.TransferCollateralToVaultFailed
+                    );
+                    continue;
+                }
             }
 
             //build orderParam
@@ -147,16 +258,18 @@ contract Gmxv2OrderModule is Ownable {
                     positionId,
                     _orderParam.sizeDeltaUsd,
                     _orderParam.initialCollateralDeltaAmount,
-                    _orderParam.acceptablePrice
+                    _orderParam.acceptablePrice,
+                    Enum.FailureReason.CreateOrderFailed
                 );
             } else {
                 emit OrderCreated(
                     _orderParam.smartAccount,
                     positionId,
-                    orderKey,
                     _orderParam.sizeDeltaUsd,
                     _orderParam.initialCollateralDeltaAmount,
-                    _orderParam.acceptablePrice
+                    _orderParam.acceptablePrice,
+                    orderKey,
+                    0
                 );
             }
         }
@@ -171,9 +284,6 @@ contract Gmxv2OrderModule is Ownable {
             orderKey = bytes32(returnData);
         }
     }
-
-    //cancel single order
-    function cancelOrder(address smartAccount, bytes32 key) external onlyOperator {}
 
     function _calcGas(uint256 _ethPrice, Order.OrderType orderType, uint256 _txGas)
         internal
@@ -398,5 +508,17 @@ contract Gmxv2OrderModule is Ownable {
         IPriceFeed priceFeed = IPriceFeed(priceFeedAddress);
         uint256 priceFeedDecimal = uint256(IPriceFeed(priceFeed).decimals());
         ethPriceMultiplier = (10 ** priceFeedDecimal) * getPriceFeedMultiplier(DATASTORE) / (10 ** 30);
+    }
+
+    // @dev adjust the gas usage to pay operator
+    // @param dataStore DataStore
+    // @param gasUsed the amount of gas used
+    function adjustGasUsage(IDataStore dataStore, uint256 gasUsed) internal view returns (uint256) {
+        // the gas cost is estimated based on the gasprice of the request txn
+        // the actual cost may be higher if the gasprice is higher in the execution txn
+        // the multiplierFactor should be adjusted to account for this
+        uint256 multiplierFactor = dataStore.getUint(Keys.EXECUTION_GAS_FEE_MULTIPLIER_FACTOR);
+        uint256 gasLimit = Precision.applyFactor(gasUsed, multiplierFactor);
+        return gasLimit;
     }
 }

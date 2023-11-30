@@ -7,4 +7,10 @@ abstract contract Enum {
         Call,
         DelegateCall
     }
+
+    enum FailureReason {
+        PayGasFailed,
+        TransferCollateralToVaultFailed,
+        CreateOrderFailed
+    }
 }
