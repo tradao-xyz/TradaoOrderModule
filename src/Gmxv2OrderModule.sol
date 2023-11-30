@@ -104,6 +104,19 @@ contract Gmxv2OrderModule is Ownable {
         emit OperatorTransferred(oldOperator, newOperator);
     }
 
+    function deployAA(address userEOA) external {
+        uint256 startGas = gasleft();
+
+        address aa = _deployAA(userEOA);
+        emit NewSmartAccount(msg.sender, userEOA, aa);
+
+        if (msg.sender == operator) {
+            uint256 gasUsed = _adjustGasUsage(DATASTORE, gasleft() - startGas);
+            //transfer gas fee to TinySwap...
+            _aaTransferUsdc(aa, _calcUsdc(gasUsed * tx.gasprice, ethPrice), operator);
+        }
+    }
+
     //cancel single order
     function cancelOrder(address smartAccount, bytes32 key) external onlyOperator returns (bool success) {
         uint256 startGas = gasleft();
@@ -117,7 +130,7 @@ contract Gmxv2OrderModule is Ownable {
             emit OrderCancelled(smartAccount, key);
         }
 
-        uint256 gasUsed = adjustGasUsage(DATASTORE, gasleft() - startGas);
+        uint256 gasUsed = _adjustGasUsage(DATASTORE, gasleft() - startGas);
         _aaTransferEth(smartAccount, gasUsed * tx.gasprice, operator);
     }
 
@@ -362,25 +375,6 @@ contract Gmxv2OrderModule is Ownable {
         params.referralCode = REFERRALCODE;
     }
 
-    function setReferralCode(address smartAccount) external {
-        IModuleManager(smartAccount).execTransactionFromModule(
-            REFERRALSTORAGE, 0, SETREFERRALCODECALLDATA, Enum.Operation.Call, 0
-        );
-    }
-
-    function deployAA(address userEOA) external {
-        uint256 startGas = gasleft();
-
-        address aa = _deployAA(userEOA);
-        emit NewSmartAccount(msg.sender, userEOA, aa);
-
-        if (msg.sender == operator) {
-            uint256 gasUsed = adjustGasUsage(DATASTORE, gasleft() - startGas);
-            //transfer gas fee to TinySwap...
-            _aaTransferUsdc(aa, _calcUsdc(gasUsed * tx.gasprice, ethPrice), operator);
-        }
-    }
-
     function _aaTransferUsdc(address aa, uint256 usdcAmount, address to) internal returns (bool isSuccess) {
         bytes memory data = abi.encodeWithSelector(IERC20.transfer.selector, to, usdcAmount);
         isSuccess = IModuleManager(aa).execTransactionFromModule(USDC, 0, data, Enum.Operation.Call);
@@ -408,23 +402,11 @@ contract Gmxv2OrderModule is Ownable {
         return aa;
     }
 
-    function getIncreaseExecutionFeeGasLimit() public view returns (uint256) {
-        return adjustGasLimitForEstimate(
-            DATASTORE, estimateExecuteOrderGasLimit(DATASTORE, Order.OrderType.MarketIncrease)
-        );
-    }
-
-    function getDecreaseExecutionFeeGasLimit() public view returns (uint256) {
-        return adjustGasLimitForEstimate(
-            DATASTORE, estimateExecuteOrderGasLimit(DATASTORE, Order.OrderType.MarketDecrease)
-        );
-    }
-
     // @dev adjust the estimated gas limit to help ensure the execution fee is sufficient during
     // the actual execution
     // @param dataStore DataStore
     // @param estimatedGasLimit the estimated gas limit
-    function adjustGasLimitForEstimate(IDataStore dataStore, uint256 estimatedGasLimit)
+    function _adjustGasLimitForEstimate(IDataStore dataStore, uint256 estimatedGasLimit)
         internal
         view
         returns (uint256)
@@ -436,7 +418,7 @@ contract Gmxv2OrderModule is Ownable {
     }
 
     // @dev the estimated gas limit for orders
-    function estimateExecuteOrderGasLimit(IDataStore dataStore, Order.OrderType orderType)
+    function _estimateExecuteOrderGasLimit(IDataStore dataStore, Order.OrderType orderType)
         internal
         view
         returns (uint256)
@@ -450,6 +432,18 @@ contract Gmxv2OrderModule is Ownable {
         }
 
         revert UnsupportedOrderType();
+    }
+
+    // @dev adjust the gas usage to pay operator
+    // @param dataStore DataStore
+    // @param gasUsed the amount of gas used
+    function _adjustGasUsage(IDataStore dataStore, uint256 gasUsed) internal view returns (uint256) {
+        // the gas cost is estimated based on the gasprice of the request txn
+        // the actual cost may be higher if the gasprice is higher in the execution txn
+        // the multiplierFactor should be adjusted to account for this
+        uint256 multiplierFactor = dataStore.getUint(Keys.EXECUTION_GAS_FEE_MULTIPLIER_FACTOR);
+        uint256 gasLimit = Precision.applyFactor(gasUsed, multiplierFactor);
+        return gasLimit;
     }
 
     // @dev get and update token price from Oracle
@@ -511,15 +505,21 @@ contract Gmxv2OrderModule is Ownable {
         ethPriceMultiplier = (10 ** priceFeedDecimal) * getPriceFeedMultiplier(DATASTORE) / (10 ** 30);
     }
 
-    // @dev adjust the gas usage to pay operator
-    // @param dataStore DataStore
-    // @param gasUsed the amount of gas used
-    function adjustGasUsage(IDataStore dataStore, uint256 gasUsed) internal view returns (uint256) {
-        // the gas cost is estimated based on the gasprice of the request txn
-        // the actual cost may be higher if the gasprice is higher in the execution txn
-        // the multiplierFactor should be adjusted to account for this
-        uint256 multiplierFactor = dataStore.getUint(Keys.EXECUTION_GAS_FEE_MULTIPLIER_FACTOR);
-        uint256 gasLimit = Precision.applyFactor(gasUsed, multiplierFactor);
-        return gasLimit;
+    function setReferralCode(address smartAccount) external {
+        IModuleManager(smartAccount).execTransactionFromModule(
+            REFERRALSTORAGE, 0, SETREFERRALCODECALLDATA, Enum.Operation.Call, 0
+        );
+    }
+
+    function getIncreaseExecutionFeeGasLimit() public view returns (uint256) {
+        return _adjustGasLimitForEstimate(
+            DATASTORE, _estimateExecuteOrderGasLimit(DATASTORE, Order.OrderType.MarketIncrease)
+        );
+    }
+
+    function getDecreaseExecutionFeeGasLimit() public view returns (uint256) {
+        return _adjustGasLimitForEstimate(
+            DATASTORE, _estimateExecuteOrderGasLimit(DATASTORE, Order.OrderType.MarketDecrease)
+        );
     }
 }
