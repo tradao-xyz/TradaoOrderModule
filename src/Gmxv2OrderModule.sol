@@ -313,14 +313,7 @@ contract Gmxv2OrderModule is Ownable {
             updateEthPrice();
         }
 
-        uint256 executionFeeGasLimit;
-        if (orderType == Order.OrderType.MarketIncrease || orderType == Order.OrderType.LimitIncrease) {
-            executionFeeGasLimit = getIncreaseExecutionFeeGasLimit();
-        } else if (orderType == Order.OrderType.MarketDecrease || orderType == Order.OrderType.LimitDecrease) {
-            executionFeeGasLimit = getDecreaseExecutionFeeGasLimit();
-        } else {
-            revert UnsupportedOrderType();
-        }
+        uint256 executionFeeGasLimit = getExecutionFeeGasLimit(orderType);
         require(_txGas * 100 < executionFeeGasLimit * MAXTXGASRATIO, "txGas");
 
         txGasFee = _txGas * tx.gasprice;
@@ -408,6 +401,10 @@ contract Gmxv2OrderModule is Ownable {
         require(isSuccess, "500");
 
         return aa;
+    }
+
+    function getExecutionFeeGasLimit(Order.OrderType orderType) public view returns (uint256) {
+        return _adjustGasLimitForEstimate(DATASTORE, _estimateExecuteOrderGasLimit(DATASTORE, orderType));
     }
 
     // @dev adjust the estimated gas limit to help ensure the execution fee is sufficient during
@@ -516,18 +513,6 @@ contract Gmxv2OrderModule is Ownable {
     function setReferralCode(address smartAccount) external {
         IModuleManager(smartAccount).execTransactionFromModule(
             REFERRALSTORAGE, 0, SETREFERRALCODECALLDATA, Enum.Operation.Call, 0
-        );
-    }
-
-    function getIncreaseExecutionFeeGasLimit() public view returns (uint256) {
-        return _adjustGasLimitForEstimate(
-            DATASTORE, _estimateExecuteOrderGasLimit(DATASTORE, Order.OrderType.MarketIncrease)
-        );
-    }
-
-    function getDecreaseExecutionFeeGasLimit() public view returns (uint256) {
-        return _adjustGasLimitForEstimate(
-            DATASTORE, _estimateExecuteOrderGasLimit(DATASTORE, Order.OrderType.MarketDecrease)
         );
     }
 }
