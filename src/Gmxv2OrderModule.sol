@@ -35,7 +35,7 @@ contract Gmxv2OrderModule is Ownable {
         ISmartAccountFactory(0x000000a56Aaca3e9a4C479ea6b6CD0DbcB6634F5);
     bytes private constant SETREFERRALCODECALLDATA =
         abi.encodeWithSignature("setTraderReferralCodeByUser(bytes32)", REFERRALCODE);
-    bytes private constant MODULE_SETUP_DATA = abi.encodeWithSignature("getModuleAddress()");
+    bytes private constant MODULE_SETUP_DATA = abi.encodeWithSignature("getModuleAddress()"); //0xf004f2f9
     address private constant BICONOMY_MODULE_SETUP = 0x2692b7d240288fEEA31139d4067255E31Fe71a79; // todo reconfirm
     bytes4 private constant OWNERSHIPT_INIT_SELECTOR = 0x2ede3bc0; //bytes4(keccak256("initForSmartAccount(address)"))
     address private constant DEFAULT_ECDSA_OWNERSHIP_MODULE = 0x0000001c5b32F37F5beA87BDD5374eB2aC54eA8e;
@@ -122,7 +122,7 @@ contract Gmxv2OrderModule is Ownable {
         isSuccess = true;
 
         if (msg.sender == operator) {
-            uint256 gasUsed = _adjustGasUsage(DATASTORE, gasleft() - startGas);
+            uint256 gasUsed = _adjustGasUsage(DATASTORE, startGas - gasleft());
             //transfer gas fee to TinySwap...
             isSuccess = _aaTransferUsdc(aa, _calcUsdc(gasUsed * tx.gasprice, ethPrice), operator);
         }
@@ -141,7 +141,7 @@ contract Gmxv2OrderModule is Ownable {
             emit OrderCancelled(smartAccount, key);
         }
 
-        uint256 gasUsed = _adjustGasUsage(DATASTORE, gasleft() - startGas);
+        uint256 gasUsed = _adjustGasUsage(DATASTORE, startGas - gasleft());
         _aaTransferEth(smartAccount, gasUsed * tx.gasprice, operator);
     }
 
