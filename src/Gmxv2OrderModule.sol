@@ -97,6 +97,7 @@ contract Gmxv2OrderModule is Ownable {
     //Owner should be transfer to a TimelockController
     constructor(address initialOperator) Ownable(msg.sender) {
         operator = initialOperator;
+        updateEthPrice();
     }
 
     function transferOperator(address newOperator) external onlyOwner {
@@ -309,7 +310,7 @@ contract Gmxv2OrderModule is Ownable {
     {
         require(_ethPrice * 100 < ethPrice * MAXPRICEBUFFERACTOR, "ethPrice");
         if (_ethPrice * 100 >= ethPrice * PRICEUPDATEACTOR) {
-            updateTokenPrice();
+            updateEthPrice();
         }
 
         uint256 executionFeeGasLimit;
@@ -454,7 +455,7 @@ contract Gmxv2OrderModule is Ownable {
     }
 
     // @dev get and update token price from Oracle
-    function updateTokenPrice() public returns (uint256 newPrice) {
+    function updateEthPrice() public returns (uint256 newPrice) {
         newPrice = getPriceFeedPrice(DATASTORE);
         ethPrice = newPrice;
         emit UpdateEthPrice(newPrice);
