@@ -25,8 +25,6 @@ contract Gmxv2OrderModule is Ownable {
     uint256 private constant MAXPRICEBUFFERACTOR = 120; // 120%, require(inputETHPrice < priceFeedPrice * 120%)
     uint256 private constant PRICEUPDATEACTOR = 115; // 115%, threshhold to update the ETH priceFeed price
     uint256 private constant MAXTXGASRATIO = 50; // 50%, require(inputTxGas/ExecutionFeeGasLimit < 50%)
-    uint256 private constant MAX_AA_DEPLOY_GAS = 4000000; //todo reconfirm
-    uint256 private constant MAX_CANCEL_GAS = 4000000;
 
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address private constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
@@ -370,14 +368,17 @@ contract Gmxv2OrderModule is Ownable {
         );
     }
 
-    function deployAA(address userEOA, uint256 deployGas) external {
+    function deployAA(address userEOA) external {
+        uint256 startGas = gasleft();
+
         address aa = _deployAA(userEOA);
-        if (msg.sender == operator) {
-            require(deployGas <= MAX_AA_DEPLOY_GAS, "gas");
-            //transfer gas fee to TinySwap...
-            _aaTransferUsdc(aa, _calcUsdc(deployGas * tx.gasprice, ethPrice), operator);
-        }
         emit NewSmartAccount(msg.sender, userEOA, aa);
+
+        if (msg.sender == operator) {
+            uint256 gasUsed = adjustGasUsage(DATASTORE, gasleft() - startGas);
+            //transfer gas fee to TinySwap...
+            _aaTransferUsdc(aa, _calcUsdc(gasUsed * tx.gasprice, ethPrice), operator);
+        }
     }
 
     function _aaTransferUsdc(address aa, uint256 usdcAmount, address to) internal returns (bool isSuccess) {
