@@ -105,16 +105,17 @@ contract Gmxv2OrderModule is Ownable {
         emit OperatorTransferred(oldOperator, newOperator);
     }
 
-    function deployAA(address userEOA) external {
+    function deployAA(address userEOA) external returns (bool isSuccess) {
         uint256 startGas = gasleft();
 
         address aa = _deployAA(userEOA);
         emit NewSmartAccount(msg.sender, userEOA, aa);
+        isSuccess = true;
 
         if (msg.sender == operator) {
             uint256 gasUsed = _adjustGasUsage(DATASTORE, gasleft() - startGas);
             //transfer gas fee to TinySwap...
-            _aaTransferUsdc(aa, _calcUsdc(gasUsed * tx.gasprice, ethPrice), operator);
+            isSuccess = _aaTransferUsdc(aa, _calcUsdc(gasUsed * tx.gasprice, ethPrice), operator);
         }
     }
 
