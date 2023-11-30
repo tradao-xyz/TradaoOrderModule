@@ -79,6 +79,15 @@ contract Gmxv2OrderModule is Ownable {
         uint256 triggerPrice
     );
 
+    struct OrderParamBase {
+        uint256 positionId;
+        uint256 _ethPrice;
+        uint256 _txGas;
+        address market;
+        Order.OrderType orderType;
+        bool isLong;
+    }
+
     struct OrderParam {
         uint256 sizeDeltaUsd;
         uint256 initialCollateralDeltaAmount; //for increase, indicate USDC transfer amount; for decrease, set to createOrderParams
@@ -138,23 +147,53 @@ contract Gmxv2OrderModule is Ownable {
     }
 
     //single order, could contain trigger price
-    function newOrder(
+    function newOrder(uint256 triggerPrice, OrderParamBase memory _orderBase, OrderParam memory _orderParam)
+        external
+        onlyOperator
+        returns (bytes32 orderKey)
+    {
+        (uint256 _txGasFee, uint256 _executionGasFee) =
+            _calcGas(_orderBase._ethPrice, _orderBase.orderType, _orderBase._txGas);
+        return _newOrder(_txGasFee, _executionGasFee, triggerPrice, _orderBase, _orderParam);
+    }
+
+    /**
+     *   copy trading orders.
+     *   do off chain check before every call:
+     *   1. check if very aa's module is enabled
+     *   2. check aa's balance
+     *   3. get latest eth price, estimate gas
+     *   4. do simulation call
+     */
+    function newOrders(OrderParamBase memory _orderBase, OrderParam[] memory orderParams)
+        external
+        onlyOperator
+        returns (bytes32[] memory orderKeys)
+    {
+        (uint256 _txGasFee, uint256 _executionGasFee) =
+            _calcGas(_orderBase._ethPrice, _orderBase.orderType, _orderBase._txGas);
+        uint256 len = orderParams.length;
+        orderKeys = new bytes32[](len);
+
+        for (uint256 i; i < len; i++) {
+            OrderParam memory _orderParam = orderParams[i];
+            orderKeys[i] = _newOrder(_txGasFee, _executionGasFee, 0, _orderBase, _orderParam);
+        }
+    }
+
+    function _newOrder(
+        uint256 _txGasFee,
+        uint256 _executionGasFee,
         uint256 triggerPrice,
-        uint256 positionId,
-        uint256 _ethPrice,
-        uint256 _txGas,
-        address market,
-        Order.OrderType orderType,
-        bool isLong,
+        OrderParamBase memory _orderBase,
         OrderParam memory _orderParam
-    ) external onlyOperator returns (bytes32 orderKey) {
-        (uint256 _txGasFee, uint256 _executionGasFee) = _calcGas(_ethPrice, orderType, _txGas);
-        bool isIncreaseOrder = BaseOrderUtils.isIncreaseOrder(orderType);
-        bool isSuccess = _payGas(_orderParam.smartAccount, _txGasFee, _executionGasFee, _ethPrice);
+    ) internal returns (bytes32 orderKey) {
+        bool isIncreaseOrder = BaseOrderUtils.isIncreaseOrder(_orderBase.orderType);
+        bool isSuccess = _payGas(_orderParam.smartAccount, _txGasFee, _executionGasFee, _orderBase._ethPrice);
         if (!isSuccess) {
             emit OrderCreationFailed(
                 _orderParam.smartAccount,
-                positionId,
+                _orderBase.positionId,
                 _orderParam.sizeDeltaUsd,
                 _orderParam.initialCollateralDeltaAmount,
                 _orderParam.acceptablePrice,
@@ -169,7 +208,7 @@ contract Gmxv2OrderModule is Ownable {
             if (!isSuccess) {
                 emit OrderCreationFailed(
                     _orderParam.smartAccount,
-                    positionId,
+                    _orderBase.positionId,
                     _orderParam.sizeDeltaUsd,
                     _orderParam.initialCollateralDeltaAmount,
                     _orderParam.acceptablePrice,
@@ -182,115 +221,44 @@ contract Gmxv2OrderModule is Ownable {
 
         //build orderParam
         BaseOrderUtils.CreateOrderParams memory cop;
-        _buildOrderCommonPart(_executionGasFee, market, orderType, isLong, cop);
+        _buildOrderCommonPart(_executionGasFee, _orderBase.market, _orderBase.orderType, _orderBase.isLong, cop);
         _buildOrderCustomPart(_orderParam, cop);
         cop.numbers.triggerPrice = triggerPrice;
 
         //send order
         orderKey = _aaCreateOrder(cop);
         if (orderKey == 0) {
-            revert OrderCreationError(
-                _orderParam.smartAccount,
-                positionId,
-                _orderParam.sizeDeltaUsd,
-                _orderParam.initialCollateralDeltaAmount,
-                _orderParam.acceptablePrice,
-                triggerPrice
-            );
+            if (isIncreaseOrder && _orderParam.initialCollateralDeltaAmount > 0) {
+                //protect user's collateral.
+                revert OrderCreationError(
+                    _orderParam.smartAccount,
+                    _orderBase.positionId,
+                    _orderParam.sizeDeltaUsd,
+                    _orderParam.initialCollateralDeltaAmount,
+                    _orderParam.acceptablePrice,
+                    triggerPrice
+                );
+            } else {
+                emit OrderCreationFailed(
+                    _orderParam.smartAccount,
+                    _orderBase.positionId,
+                    _orderParam.sizeDeltaUsd,
+                    _orderParam.initialCollateralDeltaAmount,
+                    _orderParam.acceptablePrice,
+                    triggerPrice,
+                    Enum.FailureReason.CreateOrderFailed
+                );
+            }
         } else {
             emit OrderCreated(
                 _orderParam.smartAccount,
-                positionId,
+                _orderBase.positionId,
                 _orderParam.sizeDeltaUsd,
                 _orderParam.initialCollateralDeltaAmount,
                 _orderParam.acceptablePrice,
                 orderKey,
                 triggerPrice
             );
-        }
-    }
-
-    /**
-     *   copy trading orders.
-     *   do off chain check before every call:
-     *   1. check if very aa's module is enabled
-     *   2. check aa's balance
-     *   3. get latest eth price, estimate gas
-     *   4. do simulation call
-     */
-    function newOrders(
-        uint256 positionId, //followee's positionId
-        uint256 _ethPrice,
-        uint256 _txGas,
-        address market,
-        Order.OrderType orderType,
-        bool isLong,
-        OrderParam[] memory orderParams
-    ) external onlyOperator {
-        (uint256 _txGasFee, uint256 _executionGasFee) = _calcGas(_ethPrice, orderType, _txGas);
-        uint256 len = orderParams.length;
-        bool isIncreaseOrder = BaseOrderUtils.isIncreaseOrder(orderType);
-        for (uint256 i; i < len; i++) {
-            OrderParam memory _orderParam = orderParams[i];
-            bool isSuccess = _payGas(_orderParam.smartAccount, _txGasFee, _executionGasFee, _ethPrice);
-            if (!isSuccess) {
-                emit OrderCreationFailed(
-                    _orderParam.smartAccount,
-                    positionId,
-                    _orderParam.sizeDeltaUsd,
-                    _orderParam.initialCollateralDeltaAmount,
-                    _orderParam.acceptablePrice,
-                    0,
-                    Enum.FailureReason.PayGasFailed
-                );
-                continue;
-            }
-
-            if (isIncreaseOrder && _orderParam.initialCollateralDeltaAmount > 0) {
-                isSuccess =
-                    _aaTransferUsdc(_orderParam.smartAccount, _orderParam.initialCollateralDeltaAmount, ORDER_VAULT);
-                if (!isSuccess) {
-                    emit OrderCreationFailed(
-                        _orderParam.smartAccount,
-                        positionId,
-                        _orderParam.sizeDeltaUsd,
-                        _orderParam.initialCollateralDeltaAmount,
-                        _orderParam.acceptablePrice,
-                        0,
-                        Enum.FailureReason.TransferCollateralToVaultFailed
-                    );
-                    continue;
-                }
-            }
-
-            //build orderParam
-            BaseOrderUtils.CreateOrderParams memory cop;
-            _buildOrderCommonPart(_executionGasFee, market, orderType, isLong, cop);
-            _buildOrderCustomPart(_orderParam, cop);
-
-            //send order
-            bytes32 orderKey = _aaCreateOrder(cop);
-            if (orderKey == 0) {
-                emit OrderCreationFailed(
-                    _orderParam.smartAccount,
-                    positionId,
-                    _orderParam.sizeDeltaUsd,
-                    _orderParam.initialCollateralDeltaAmount,
-                    _orderParam.acceptablePrice,
-                    0,
-                    Enum.FailureReason.CreateOrderFailed
-                );
-            } else {
-                emit OrderCreated(
-                    _orderParam.smartAccount,
-                    positionId,
-                    _orderParam.sizeDeltaUsd,
-                    _orderParam.initialCollateralDeltaAmount,
-                    _orderParam.acceptablePrice,
-                    orderKey,
-                    0
-                );
-            }
         }
     }
 
