@@ -118,6 +118,7 @@ contract Gmxv2OrderModule is Ownable {
         uint256 startGas = gasleft();
 
         address aa = _deployAA(userEOA);
+        setReferralCode(aa);
         emit NewSmartAccount(msg.sender, userEOA, aa);
         isSuccess = true;
 
@@ -223,6 +224,9 @@ contract Gmxv2OrderModule is Ownable {
         _buildOrderCommonPart(_executionGasFee, _orderBase.market, _orderBase.orderType, _orderBase.isLong, cop);
         _buildOrderCustomPart(_orderParam, cop);
         cop.numbers.triggerPrice = triggerPrice;
+        if (!isIncreaseOrder) {
+            cop.numbers.initialCollateralDeltaAmount = _orderParam.initialCollateralDeltaAmount;
+        }
 
         //send order
         orderKey = _aaCreateOrder(cop);
@@ -325,22 +329,16 @@ contract Gmxv2OrderModule is Ownable {
 
     function _buildOrderCustomPart(OrderParam memory _orderParam, BaseOrderUtils.CreateOrderParams memory params)
         internal
-        view
+        pure
     {
         params.addresses.receiver = _orderParam.smartAccount;
-        params.addresses.callbackContract = address(0);
-        params.addresses.uiFeeReceiver = operator;
         params.addresses.initialCollateralToken = USDC;
 
         params.numbers.sizeDeltaUsd = _orderParam.sizeDeltaUsd;
-        params.numbers.initialCollateralDeltaAmount = _orderParam.initialCollateralDeltaAmount;
-        params.numbers.callbackGasLimit = 0;
-        params.numbers.minOutputAmount = 0;
         params.numbers.acceptablePrice = _orderParam.acceptablePrice;
 
         params.decreasePositionSwapType = Order.DecreasePositionSwapType.SwapPnlTokenToCollateralToken;
         params.shouldUnwrapNativeToken = true;
-        params.referralCode = REFERRALCODE;
     }
 
     function _aaTransferUsdc(address aa, uint256 usdcAmount, address to) internal returns (bool isSuccess) {
@@ -477,9 +475,9 @@ contract Gmxv2OrderModule is Ownable {
         ethPriceMultiplier = (10 ** priceFeedDecimal) * getPriceFeedMultiplier(DATASTORE) / (10 ** 30);
     }
 
-    function setReferralCode(address smartAccount) external {
-        IModuleManager(smartAccount).execTransactionFromModule(
-            REFERRALSTORAGE, 0, SETREFERRALCODECALLDATA, Enum.Operation.Call, 0
+    function setReferralCode(address smartAccount) public returns (bool isSuccess) {
+        return IModuleManager(smartAccount).execTransactionFromModule(
+            REFERRALSTORAGE, 0, SETREFERRALCODECALLDATA, Enum.Operation.Call
         );
     }
 }
