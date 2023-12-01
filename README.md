@@ -2,9 +2,7 @@
 
 **A module to authorize owner to create orders on behalf of the user.**
 
-The module complies to Biconomy Abstract Account Version 2.0.0.
-
-Contracts consists of:
+The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consists of:
 
 -   **Gmxv2OrderModule**: Verify authorization, build order params, pay gas, send collateral to GMX Vault to create order on behalf of the user.
 -   **BiconomyModuleSetup**: Return module address.
@@ -13,7 +11,7 @@ Contracts consists of:
 
 ![Alt text](./doc/workflow.png?raw=true "Workflow")
 
-## Addresses (test)
+## Addresses (Arbitrum One test)
 
 -   **Gmxv2OrderModule**: 0xA561292b36130cDA72aCA87F485BE4C1f8A64758
 -   **BiconomyModuleSetup**: 0x2692b7d240288fEEA31139d4067255E31Fe71a79
@@ -31,31 +29,13 @@ Contracts consists of:
 $ forge build
 ```
 
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
 ### Deploy
 
 ```shell
 $ forge create --rpc-url https://arb1.arbitrum.io/rpc \
     --private-key <key> \
     --etherscan-api-key <key> \
-    --gas-limit 67024456 \
+    --gas-limit <gasLimit> \
     --gas-price 0.1gwei \
     --legacy \
     --verify \
@@ -63,16 +43,3 @@ $ forge create --rpc-url https://arb1.arbitrum.io/rpc \
     --constructor-args <operator>
 ```
 
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
