@@ -103,7 +103,6 @@ contract Gmxv2OrderModule is Ownable {
         _;
     }
 
-    //Owner should be transfer to a TimelockController
     constructor(address initialOperator) Ownable(msg.sender) {
         operator = initialOperator;
     }
