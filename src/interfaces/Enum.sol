@@ -9,7 +9,7 @@ abstract contract Enum {
     }
 
     enum FailureReason {
-        PayGasFailed,
+        PayExecutionFeeFailed,
         TransferCollateralToVaultFailed,
         CreateOrderFailed
     }

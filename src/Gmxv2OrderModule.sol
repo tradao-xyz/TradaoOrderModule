@@ -19,13 +19,10 @@ import "./interfaces/IExchangeRouter.sol";
 //2. Operator should approve WETH to this contract
 contract Gmxv2OrderModule is Ownable {
     address public operator;
-    uint256 public ethPrice;
-    uint256 public ethPriceMultiplier = 10 ** 12;
+    uint256 public ethPriceMultiplier = 10 ** 12; // cache for gas saving;
+    uint256 public txGasFactor = 110; // 110%, a buffer to track L1 gas price movements;
 
-    uint256 private constant MAXPRICEBUFFERACTOR = 120; // 120%, require(inputETHPrice < priceFeedPrice * 120%)
-    uint256 private constant PRICEUPDATEACTOR = 115; // 115%, threshhold to update the ETH priceFeed price
-    uint256 private constant MAXTXGASRATIO = 50; // 50%, require(inputTxGas/ExecutionFeeGasLimit < 50%)
-
+    uint256 private constant MAX_TXGAS_FACTOR = 200; // 200%;
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address private constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
     IDataStore private constant DATASTORE = IDataStore(0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8);
@@ -41,13 +38,12 @@ contract Gmxv2OrderModule is Ownable {
     address private constant DEFAULT_ECDSA_OWNERSHIP_MODULE = 0x0000001c5b32F37F5beA87BDD5374eB2aC54eA8e;
     bytes32 private constant ETH_MULTIPLIER_KEY = 0x007b50887d7f7d805ee75efc0a60f8aaee006442b047c7816fc333d6d083cae0; //keccak256(abi.encode(keccak256(abi.encode("PRICE_FEED_MULTIPLIER")), address(WETH)))
     bytes32 private constant ETH_PRICE_FEED_KEY = 0xb1bca3c71fe4192492fabe2c35af7a68d4fc6bbd2cfba3e35e3954464a7d848e; //keccak256(abi.encode(keccak256(abi.encode("PRICE_FEED")), address(WETH)))
-    uint256 private ETH_MULTIPLIER = 10 ** 18;
-    uint256 private USDC_MULTIPLIER = 10 ** 6;
+    uint256 private constant ETH_MULTIPLIER = 10 ** 18;
+    uint256 private constant USDC_MULTIPLIER = 10 ** 6;
     address private constant ORDER_VAULT = 0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5;
     IExchangeRouter private constant EXCHANGE_ROUTER = IExchangeRouter(0x7C68C7866A64FA2160F78EEaE12217FFbf871fa8);
 
     event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
-    event UpdateEthPrice(uint256 newPrice);
     event NewSmartAccount(address indexed creator, address userEOA, address smartAccount);
     event OrderCreated(
         address indexed aa,
@@ -68,6 +64,8 @@ contract Gmxv2OrderModule is Ownable {
         Enum.FailureReason reason
     );
     event OrderCancelled(address indexed aa, bytes32 orderKey);
+    event PayGasFailed(address indexed aa, uint256 gasFeeEth, uint256 ethPrice, uint256 aaUSDCBalance);
+    event TxGasFactorUpdated(uint256 prevFactor, uint256 currentFactor);
 
     error UnsupportedOrderType();
     error OrderCreationError(
@@ -81,8 +79,6 @@ contract Gmxv2OrderModule is Ownable {
 
     struct OrderParamBase {
         uint256 positionId;
-        uint256 _ethPrice;
-        uint256 _txGas;
         address market;
         Order.OrderType orderType;
         bool isLong;
@@ -122,7 +118,8 @@ contract Gmxv2OrderModule is Ownable {
         isSuccess = true;
 
         if (msg.sender == operator) {
-            uint256 gasUsed = _adjustGasUsage(DATASTORE, startGas - gasleft());
+            uint256 ethPrice = getPriceFeedPrice();
+            uint256 gasUsed = _adjustGasUsage(startGas - gasleft());
             //transfer gas fee to TinySwap...
             isSuccess = _aaTransferUsdc(aa, _calcUsdc(gasUsed * tx.gasprice, ethPrice), operator);
         }
@@ -141,7 +138,7 @@ contract Gmxv2OrderModule is Ownable {
             emit OrderCancelled(smartAccount, key);
         }
 
-        uint256 gasUsed = _adjustGasUsage(DATASTORE, startGas - gasleft());
+        uint256 gasUsed = _adjustGasUsage(startGas - gasleft());
         _aaTransferEth(smartAccount, gasUsed * tx.gasprice, operator);
     }
 
@@ -151,9 +148,17 @@ contract Gmxv2OrderModule is Ownable {
         onlyOperator
         returns (bytes32 orderKey)
     {
-        (uint256 _txGasFee, uint256 _executionGasFee) =
-            _calcGas(_orderBase._ethPrice, _orderBase.orderType, _orderBase._txGas);
-        return _newOrder(_txGasFee, _executionGasFee, triggerPrice, _orderBase, _orderParam);
+        uint256 startGasLeft = gasleft();
+        uint256 ethPrice = getPriceFeedPrice();
+        uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType) * tx.gasprice;
+        (bytes32 _orderKey, bool _isExecutionFeePayed) =
+            _newOrder(_executionGasFee, triggerPrice, _orderBase, _orderParam);
+        orderKey = _orderKey;
+
+        uint256 gasFeeAmount = _adjustGasUsage(startGasLeft - gasleft()) * tx.gasprice;
+        _payGas(
+            _orderParam.smartAccount, _isExecutionFeePayed ? gasFeeAmount + _executionGasFee : gasFeeAmount, ethPrice
+        );
     }
 
     /**
@@ -169,26 +174,38 @@ contract Gmxv2OrderModule is Ownable {
         onlyOperator
         returns (bytes32[] memory orderKeys)
     {
-        (uint256 _txGasFee, uint256 _executionGasFee) =
-            _calcGas(_orderBase._ethPrice, _orderBase.orderType, _orderBase._txGas);
+        uint256 lastGasLeft = gasleft();
+        uint256 ethPrice = getPriceFeedPrice();
+        uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType) * tx.gasprice;
+        uint256 multiplierFactor = DATASTORE.getUint(Keys.EXECUTION_GAS_FEE_MULTIPLIER_FACTOR);
+        uint256 gasFeeAmount;
+
         uint256 len = orderParams.length;
         orderKeys = new bytes32[](len);
-
         for (uint256 i; i < len; i++) {
             OrderParam memory _orderParam = orderParams[i];
-            orderKeys[i] = _newOrder(_txGasFee, _executionGasFee, 0, _orderBase, _orderParam);
+            (bytes32 _orderKey, bool _isExecutionFeePayed) = _newOrder(_executionGasFee, 0, _orderBase, _orderParam);
+            orderKeys[i] = _orderKey;
+            uint256 gasUsed = lastGasLeft - gasleft();
+            lastGasLeft = gasleft();
+            uint256 gasLimit = Precision.applyFactor(gasUsed, multiplierFactor) * txGasFactor / 100;
+            gasFeeAmount = gasLimit * tx.gasprice;
+            _payGas(
+                _orderParam.smartAccount,
+                _isExecutionFeePayed ? gasFeeAmount + _executionGasFee : gasFeeAmount,
+                ethPrice
+            );
         }
     }
 
     function _newOrder(
-        uint256 _txGasFee,
         uint256 _executionGasFee,
         uint256 triggerPrice,
         OrderParamBase memory _orderBase,
         OrderParam memory _orderParam
-    ) internal returns (bytes32 orderKey) {
-        bool isIncreaseOrder = BaseOrderUtils.isIncreaseOrder(_orderBase.orderType);
-        bool isSuccess = _payGas(_orderParam.smartAccount, _txGasFee, _executionGasFee, _orderBase._ethPrice);
+    ) internal returns (bytes32 orderKey, bool isExecutionFeePayed) {
+        //transfer execution fee WETH from operator to GMX Vault
+        bool isSuccess = IERC20(WETH).transferFrom(operator, ORDER_VAULT, _executionGasFee);
         if (!isSuccess) {
             emit OrderCreationFailed(
                 _orderParam.smartAccount,
@@ -197,11 +214,12 @@ contract Gmxv2OrderModule is Ownable {
                 _orderParam.initialCollateralDeltaAmount,
                 _orderParam.acceptablePrice,
                 triggerPrice,
-                Enum.FailureReason.PayGasFailed
+                Enum.FailureReason.PayExecutionFeeFailed
             );
-            return 0;
+            return (0, false);
         }
 
+        bool isIncreaseOrder = BaseOrderUtils.isIncreaseOrder(_orderBase.orderType);
         if (isIncreaseOrder && _orderParam.initialCollateralDeltaAmount > 0) {
             isSuccess = _aaTransferUsdc(_orderParam.smartAccount, _orderParam.initialCollateralDeltaAmount, ORDER_VAULT);
             if (!isSuccess) {
@@ -214,7 +232,7 @@ contract Gmxv2OrderModule is Ownable {
                     triggerPrice,
                     Enum.FailureReason.TransferCollateralToVaultFailed
                 );
-                return 0;
+                return (0, true);
             }
         }
 
@@ -262,6 +280,7 @@ contract Gmxv2OrderModule is Ownable {
                 triggerPrice
             );
         }
+        return (orderKey, true);
     }
 
     //return orderKey == 0 if failed.
@@ -274,41 +293,17 @@ contract Gmxv2OrderModule is Ownable {
         }
     }
 
-    function _calcGas(uint256 _ethPrice, Order.OrderType orderType, uint256 _txGas)
-        internal
-        returns (uint256 txGasFee, uint256 executionGasFee)
-    {
-        require(_ethPrice * 100 < ethPrice * MAXPRICEBUFFERACTOR, "ethPrice");
-        if (_ethPrice * 100 >= ethPrice * PRICEUPDATEACTOR) {
-            updateEthPrice();
-        }
-
-        uint256 executionFeeGasLimit = getExecutionFeeGasLimit(orderType);
-        require(_txGas * 100 < executionFeeGasLimit * MAXTXGASRATIO, "txGas");
-
-        txGasFee = _txGas * tx.gasprice;
-        executionGasFee = executionFeeGasLimit * tx.gasprice;
-    }
-
-    function _payGas(address aa, uint256 txGasFee, uint256 executionFee, uint256 _ethPrice)
-        internal
-        returns (bool isSuccess)
-    {
-        if (aa.balance < txGasFee + executionFee) {
-            if (IERC20(WETH).balanceOf(operator) < executionFee) {
-                return false;
-            }
+    function _payGas(address aa, uint256 totalGasFeeEth, uint256 _ethPrice) internal returns (bool isSuccess) {
+        if (aa.balance < totalGasFeeEth) {
             //transfer gas fee and execution fee USDC from AA to TinySwap
-            isSuccess = _aaTransferUsdc(aa, _calcUsdc(txGasFee + executionFee, _ethPrice), operator);
+            isSuccess = _aaTransferUsdc(aa, _calcUsdc(totalGasFeeEth, _ethPrice), operator);
         } else {
             //convert ETH to WETH to operator
             bytes memory data = abi.encodeWithSelector(IWNT(WETH).depositTo.selector, operator);
-            isSuccess =
-                IModuleManager(aa).execTransactionFromModule(WETH, txGasFee + executionFee, data, Enum.Operation.Call);
+            isSuccess = IModuleManager(aa).execTransactionFromModule(WETH, totalGasFeeEth, data, Enum.Operation.Call);
         }
-        //transfer execution fee WETH from operator to GMX Vault
-        if (isSuccess) {
-            require(IERC20(WETH).transferFrom(operator, ORDER_VAULT, executionFee), "op eth");
+        if (!isSuccess) {
+            emit PayGasFailed(aa, totalGasFeeEth, _ethPrice, IERC20(USDC).balanceOf(aa));
         }
     }
 
@@ -406,24 +401,17 @@ contract Gmxv2OrderModule is Ownable {
     // @dev adjust the gas usage to pay operator
     // @param dataStore DataStore
     // @param gasUsed the amount of gas used
-    function _adjustGasUsage(IDataStore dataStore, uint256 gasUsed) internal view returns (uint256) {
+    function _adjustGasUsage(uint256 gasUsed) internal view returns (uint256) {
         // the gas cost is estimated based on the gasprice of the request txn
         // the actual cost may be higher if the gasprice is higher in the execution txn
         // the multiplierFactor should be adjusted to account for this
-        uint256 multiplierFactor = dataStore.getUint(Keys.EXECUTION_GAS_FEE_MULTIPLIER_FACTOR);
+        uint256 multiplierFactor = DATASTORE.getUint(Keys.EXECUTION_GAS_FEE_MULTIPLIER_FACTOR);
         uint256 gasLimit = Precision.applyFactor(gasUsed, multiplierFactor);
-        return gasLimit;
+        return gasLimit * txGasFactor / 100;
     }
 
-    // @dev get and update token price from Oracle
-    function updateEthPrice() public returns (uint256 newPrice) {
-        newPrice = getPriceFeedPrice(DATASTORE);
-        ethPrice = newPrice;
-        emit UpdateEthPrice(newPrice);
-    }
-
-    function getPriceFeedPrice(IDataStore dataStore) public view returns (uint256) {
-        address priceFeedAddress = dataStore.getAddress(ETH_PRICE_FEED_KEY);
+    function getPriceFeedPrice() public view returns (uint256) {
+        address priceFeedAddress = DATASTORE.getAddress(ETH_PRICE_FEED_KEY);
         IPriceFeed priceFeed = IPriceFeed(priceFeedAddress);
 
         (
@@ -440,7 +428,7 @@ contract Gmxv2OrderModule is Ownable {
         require(_price > 0, "priceFeed");
 
         uint256 price = SafeCast.toUint256(_price);
-        uint256 precision = getPriceFeedMultiplier(dataStore);
+        uint256 precision = getPriceFeedMultiplier(DATASTORE);
 
         uint256 adjustedPrice = Precision.mulDiv(price, precision, Precision.FLOAT_PRECISION);
 
@@ -474,9 +462,16 @@ contract Gmxv2OrderModule is Ownable {
         ethPriceMultiplier = (10 ** priceFeedDecimal) * getPriceFeedMultiplier(DATASTORE) / (10 ** 30);
     }
 
-    function setReferralCode(address smartAccount) public returns (bool isSuccess) {
+    function setReferralCode(address smartAccount) public onlyOperator returns (bool isSuccess) {
         return IModuleManager(smartAccount).execTransactionFromModule(
             REFERRALSTORAGE, 0, SETREFERRALCODECALLDATA, Enum.Operation.Call
         );
+    }
+
+    function updateTxGasFactor(uint256 _txGasFactor) external onlyOperator {
+        require(_txGasFactor <= MAX_TXGAS_FACTOR, "400");
+        uint256 _prevFactor = txGasFactor;
+        txGasFactor = _txGasFactor;
+        emit TxGasFactorUpdated(_prevFactor, _txGasFactor);
     }
 }
