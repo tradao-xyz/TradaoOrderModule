@@ -15,8 +15,9 @@ import "./interfaces/ISmartAccountFactory.sol";
 import "./interfaces/IWNT.sol";
 import "./interfaces/IExchangeRouter.sol";
 
-//1. Arbitrum configs
-//2. Operator should approve WETH to this contract
+//v1.1.0
+//Arbitrum equipped
+//Operator should approve WETH to this contract
 contract Gmxv2OrderModule is Ownable {
     address public operator;
     uint256 public ethPriceMultiplier = 10 ** 12; // cache for gas saving;
