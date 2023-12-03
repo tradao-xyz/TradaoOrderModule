@@ -166,9 +166,8 @@ contract Gmxv2OrderModule is Ownable {
      *   copy trading orders.
      *   do off chain check before every call:
      *   1. check if very aa's module is enabled
-     *   2. check aa's balance
-     *   3. get latest eth price, estimate gas
-     *   4. do simulation call
+     *   2. estimate gas, check aa's balance
+     *   3. do simulation call
      */
     function newOrders(OrderParamBase memory _orderBase, OrderParam[] memory orderParams)
         external
@@ -189,8 +188,7 @@ contract Gmxv2OrderModule is Ownable {
             orderKeys[i] = _orderKey;
             uint256 gasUsed = lastGasLeft - gasleft();
             lastGasLeft = gasleft();
-            uint256 gasLimit = Precision.applyFactor(gasUsed, multiplierFactor) * txGasFactor / 100;
-            gasFeeAmount = gasLimit * tx.gasprice;
+            gasFeeAmount = Precision.applyFactor(gasUsed, multiplierFactor) * txGasFactor / 100 * tx.gasprice;
             _payGas(
                 _orderParam.smartAccount,
                 _isExecutionFeePayed ? gasFeeAmount + _executionGasFee : gasFeeAmount,
