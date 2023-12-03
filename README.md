@@ -4,7 +4,7 @@
 
 The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consists of:
 
--   **Gmxv2OrderModule**: Verify authorization, build order params, pay gas, send collateral to GMX Vault to create order on behalf of the user.
+-   **Gmxv2OrderModule**: Restrict the operator to only a few operations, include deploy Smart Account, pay gas and create order on behalf of the user
 -   **BiconomyModuleSetup**: Return module address.
 
 ## Workflow
@@ -13,11 +13,11 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 
 ## Addresses (Arbitrum One test)
 
--   **Gmxv2OrderModule**: 0xA561292b36130cDA72aCA87F485BE4C1f8A64758
+-   **Gmxv2OrderModule**: 
 -   **BiconomyModuleSetup**: 0x2692b7d240288fEEA31139d4067255E31Fe71a79
 -   **TimelockController**: 
 -   **Operator**: 0xAbc2E7AAD178C8f3DF2bdE0d1F2ae8a4DCdFcbD7
--   **Owner of Gmxv2OrderModule**: 0xAbc2E7AAD178C8f3DF2bdE0d1F2ae8a4DCdFcbD7
+-   **Owner of Gmxv2OrderModule**: 
 -   **Owner of BiconomyModuleSetup**: TimelockController
 -   **Proposer and Executor of TimelockController**: 0xAbc2E7AAD178C8f3DF2bdE0d1F2ae8a4DCdFcbD7
 
