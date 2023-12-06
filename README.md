@@ -20,6 +20,7 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 -   **Owner of Gmxv2OrderModule**: 
 -   **Owner of BiconomyModuleSetup**: TimelockController
 -   **Proposer and Executor of TimelockController**: 0xAbc2E7AAD178C8f3DF2bdE0d1F2ae8a4DCdFcbD7
+-   **Referrals**: 
 
 ## Usage
 
