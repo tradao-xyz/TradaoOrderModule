@@ -4,7 +4,7 @@
 
 The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consists of:
 
--   **Gmxv2OrderModule**: Restrict the operator to only a few operations, include deploy Smart Account, pay gas and create order on behalf of the user
+-   **Gmxv2OrderModule**: Restrict the operator to only a few operations, include deploy Smart Account, pay gas and create order on behalf of the user.
 -   **BiconomyModuleSetup**: Return module address.
 
 ## Workflow
