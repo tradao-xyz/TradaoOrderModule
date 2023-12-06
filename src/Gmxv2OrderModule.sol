@@ -14,6 +14,7 @@ import "./interfaces/IModuleManager.sol";
 import "./interfaces/ISmartAccountFactory.sol";
 import "./interfaces/IWNT.sol";
 import "./interfaces/IExchangeRouter.sol";
+import "./interfaces/IReferrals.sol";
 
 //v1.1.0
 //Arbitrum equipped
@@ -43,6 +44,7 @@ contract Gmxv2OrderModule is Ownable {
     uint256 private constant USDC_MULTIPLIER = 10 ** 6;
     address private constant ORDER_VAULT = 0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5;
     IExchangeRouter private constant EXCHANGE_ROUTER = IExchangeRouter(0x7C68C7866A64FA2160F78EEaE12217FFbf871fa8);
+    IReferrals private constant REFERRALS = IReferrals(0x7C68C7866A64FA2160F78EEaE12217FFbf871fa8); //todo
 
     event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
     event NewSmartAccount(address indexed creator, address userEOA, address smartAccount);
@@ -53,7 +55,8 @@ contract Gmxv2OrderModule is Ownable {
         uint256 collateralDelta,
         uint256 acceptablePrice,
         bytes32 orderKey,
-        uint256 triggerPrice
+        uint256 triggerPrice,
+        address tradaoReferrer
     );
     event OrderCreationFailed(
         address indexed aa,
@@ -110,11 +113,14 @@ contract Gmxv2OrderModule is Ownable {
         emit OperatorTransferred(oldOperator, newOperator);
     }
 
-    function deployAA(address userEOA) external returns (bool isSuccess) {
+    function deployAA(address userEOA, address _referrer) external returns (bool isSuccess) {
         uint256 startGas = gasleft();
 
         address aa = _deployAA(userEOA);
         setReferralCode(aa);
+        if (_referrer != address(0)) {
+            REFERRALS.setReferrerFromModule(aa, _referrer);
+        }
         emit NewSmartAccount(msg.sender, userEOA, aa);
         isSuccess = true;
 
@@ -276,7 +282,8 @@ contract Gmxv2OrderModule is Ownable {
                 _orderParam.initialCollateralDeltaAmount,
                 _orderParam.acceptablePrice,
                 orderKey,
-                triggerPrice
+                triggerPrice,
+                REFERRALS.getReferrer(_orderParam.smartAccount)
             );
         }
         return (orderKey, true);
