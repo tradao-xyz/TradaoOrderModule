@@ -16,7 +16,7 @@ import "./interfaces/IWNT.sol";
 import "./interfaces/IExchangeRouter.sol";
 import "./interfaces/IReferrals.sol";
 
-//v1.1.0
+//v1.2.1
 //Arbitrum equipped
 //Operator should approve WETH to this contract
 contract Gmxv2OrderModule is Ownable {
