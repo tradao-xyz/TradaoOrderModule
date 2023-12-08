@@ -44,7 +44,7 @@ contract Gmxv2OrderModule is Ownable {
     uint256 private constant USDC_MULTIPLIER = 10 ** 6;
     address private constant ORDER_VAULT = 0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5;
     IExchangeRouter private constant EXCHANGE_ROUTER = IExchangeRouter(0x7C68C7866A64FA2160F78EEaE12217FFbf871fa8);
-    IReferrals private constant REFERRALS = IReferrals(0x7C68C7866A64FA2160F78EEaE12217FFbf871fa8); //todo
+    IReferrals private constant REFERRALS = IReferrals(0xC8F9b1A0a120eFA05EEeb28B10b14FdE18Bb0F50);
 
     event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
     event NewSmartAccount(address indexed creator, address userEOA, address smartAccount);
@@ -82,7 +82,7 @@ contract Gmxv2OrderModule is Ownable {
     );
 
     struct OrderParamBase {
-        uint256 positionId;
+        uint256 positionId; //blocknumber + transactionId + logId
         address market;
         Order.OrderType orderType;
         bool isLong;
