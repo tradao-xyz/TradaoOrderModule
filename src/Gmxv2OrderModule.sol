@@ -105,6 +105,7 @@ contract Gmxv2OrderModule is Ownable {
 
     constructor(address initialOperator) Ownable(msg.sender) {
         operator = initialOperator;
+        emit OperatorTransferred(address(0), initialOperator);
     }
 
     function transferOperator(address newOperator) external onlyOwner {

@@ -13,7 +13,7 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 
 ## Addresses (Arbitrum One test)
 
--   **Gmxv2OrderModule**: 
+-   **Gmxv2OrderModule**: 0x05C7a042140974cbaCD1F41F0ceB0813a6023085
 -   **BiconomyModuleSetup**: 0x2692b7d240288fEEA31139d4067255E31Fe71a79
 -   **TimelockController**: 
 -   **Operator**: 0xAbc2E7AAD178C8f3DF2bdE0d1F2ae8a4DCdFcbD7
