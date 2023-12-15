@@ -171,7 +171,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     {
         uint256 startGasLeft = gasleft();
         uint256 ethPrice = getPriceFeedPrice();
-        bool isSaveCollateral = _orderBase.positionId > 0 && _orderBase.orderType == Order.OrderType.MarketDecrease
+        bool isSaveCollateral = _orderBase.positionId > 0 && BaseOrderUtils.isDecreaseOrder(_orderBase.orderType)
             && _orderParam.sizeDeltaUsd > 0;
         uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType, isSaveCollateral) * tx.gasprice;
         (bytes32 _orderKey, bool _isExecutionFeePayed) =
@@ -198,7 +198,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     {
         uint256 lastGasLeft = gasleft();
         uint256 ethPrice = getPriceFeedPrice();
-        bool isSaveCollateral = _orderBase.positionId > 0 && _orderBase.orderType == Order.OrderType.MarketDecrease
+        bool isSaveCollateral = _orderBase.positionId > 0 && BaseOrderUtils.isDecreaseOrder(_orderBase.orderType)
             && orderParams[0].sizeDeltaUsd > 0;
         uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType, isSaveCollateral) * tx.gasprice;
         uint256 multiplierFactor = DATASTORE.getUint(Keys.EXECUTION_GAS_FEE_MULTIPLIER_FACTOR);
