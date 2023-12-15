@@ -26,6 +26,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     uint256 public txGasFactor = 110; // 110%, a buffer to track L1 gas price movements;
     mapping(bytes32 => uint256) public orderCollateral; //[order key, position collateral]
     uint256 public profitTakeRatio = 0; // 0%
+    address public profitTaker;
 
     uint256 private constant MAX_PROFIT_TAKE_RATIO = 10; //10%;
     uint256 private constant MAX_TXGAS_FACTOR = 200; // 200%;
@@ -54,6 +55,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     uint256 private constant CALLBACK_GAS_LIMIT = 300000; //todo
     uint256 private constant MIN_PROFIT_TAKE_BASE = 5 * USDC_MULTIPLIER;
 
+    event ProfitTakerTransferred(address indexed previousTaker, address indexed newTaker);
     event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
     event NewSmartAccount(address indexed creator, address userEOA, address smartAccount);
     event OrderCreated(
@@ -117,9 +119,17 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         _;
     }
 
-    constructor(address initialOperator) Ownable(msg.sender) {
+    constructor(address initialOperator, address initialProfitTaker) Ownable(msg.sender) {
         operator = initialOperator;
+        profitTaker = initialProfitTaker;
         emit OperatorTransferred(address(0), initialOperator);
+        emit ProfitTakerTransferred(address(0), initialProfitTaker);
+    }
+
+    function transferProfitTaker(address newProfitTaker) external onlyOwner {
+        address oldTaker = profitTaker;
+        profitTaker = newProfitTaker;
+        emit ProfitTakerTransferred(oldTaker, newProfitTaker);
     }
 
     function transferOperator(address newOperator) external onlyOwner {
@@ -556,7 +566,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
 
         //take profit
         uint256 profitTaken = (outputAmount - collateralDelta) * profitTakeRatio / 100;
-        _aaTransferUsdc(order.addresses.account, profitTaken, owner());
+        _aaTransferUsdc(order.addresses.account, profitTaken, profitTaker);
     }
 
     // @dev called after an order cancellation
