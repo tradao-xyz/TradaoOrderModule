@@ -52,6 +52,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     address private constant ORDER_HANDLER = 0x352f684ab9e97a6321a13CF03A61316B681D9fD2;
     bytes32 private constant COLLATERAL_AMOUNT = 0xb88da5cd71628783263477a6261c2906e380aa32e85e2e87b2463bbdc1127221; //keccak256(abi.encode("COLLATERAL_AMOUNT"));
     uint256 private constant CALLBACK_GAS_LIMIT = 300000; //todo
+    uint256 private constant MIN_PROFIT_TAKE_BASE = 5 * USDC_MULTIPLIER;
 
     event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
     event NewSmartAccount(address indexed creator, address userEOA, address smartAccount);
@@ -523,20 +524,21 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         external
         onlyOrderHandler
     {
+        uint256 prevCollateral = orderCollateral[key];
+        if (prevCollateral == 0) {
+            //exception
+            return;
+        }
+        delete orderCollateral[key];
+
         if (eventData.addressItems.items[0].value != USDC) {
             //exception
             return;
         }
 
         uint256 outputAmount = eventData.uintItems.items[0].value;
-        if (outputAmount < USDC_MULTIPLIER) {
+        if (outputAmount < MIN_PROFIT_TAKE_BASE) {
             //do not take profit if output is too small.
-            return;
-        }
-
-        uint256 prevCollateral = orderCollateral[key];
-        if (prevCollateral == 0) {
-            //exception
             return;
         }
 
@@ -547,7 +549,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         }
 
         uint256 collateralDelta = prevCollateral - curCollateral;
-        if (outputAmount < collateralDelta + USDC_MULTIPLIER) {
+        if (outputAmount < collateralDelta + MIN_PROFIT_TAKE_BASE) {
             //do not take profit if it's loss or profit is too small.
             return;
         }
@@ -555,8 +557,6 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         //take profit
         uint256 profitTaken = (outputAmount - collateralDelta) * profitTakeRatio / 100;
         _aaTransferUsdc(order.addresses.account, profitTaken, owner());
-
-        delete orderCollateral[key];
     }
 
     // @dev called after an order cancellation
