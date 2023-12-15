@@ -15,15 +15,19 @@ import "./interfaces/ISmartAccountFactory.sol";
 import "./interfaces/IWNT.sol";
 import "./interfaces/IExchangeRouter.sol";
 import "./interfaces/IReferrals.sol";
+import "./interfaces/IOrderCallbackReceiver.sol";
 
 //v1.2.1
 //Arbitrum equipped
 //Operator should approve WETH to this contract
-contract Gmxv2OrderModule is Ownable {
+contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     address public operator;
     uint256 public ethPriceMultiplier = 10 ** 12; // cache for gas saving;
     uint256 public txGasFactor = 110; // 110%, a buffer to track L1 gas price movements;
+    mapping(bytes32 => uint256) public orderCollateral; //[order key, position collateral]
+    uint256 public profitTakeRatio = 0; // 0%
 
+    uint256 private constant MAX_PROFIT_TAKE_RATIO = 10; //10%;
     uint256 private constant MAX_TXGAS_FACTOR = 200; // 200%;
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address private constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
@@ -45,6 +49,9 @@ contract Gmxv2OrderModule is Ownable {
     address private constant ORDER_VAULT = 0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5;
     IExchangeRouter private constant EXCHANGE_ROUTER = IExchangeRouter(0x7C68C7866A64FA2160F78EEaE12217FFbf871fa8);
     IReferrals private constant REFERRALS = IReferrals(0xC8F9b1A0a120eFA05EEeb28B10b14FdE18Bb0F50);
+    address private constant ORDER_HANDLER = 0x352f684ab9e97a6321a13CF03A61316B681D9fD2;
+    bytes32 private constant COLLATERAL_AMOUNT = 0xb88da5cd71628783263477a6261c2906e380aa32e85e2e87b2463bbdc1127221; //keccak256(abi.encode("COLLATERAL_AMOUNT"));
+    uint256 private constant CALLBACK_GAS_LIMIT = 300000; //todo
 
     event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
     event NewSmartAccount(address indexed creator, address userEOA, address smartAccount);
@@ -70,6 +77,7 @@ contract Gmxv2OrderModule is Ownable {
     event OrderCancelled(address indexed aa, bytes32 orderKey);
     event PayGasFailed(address indexed aa, uint256 gasFeeEth, uint256 ethPrice, uint256 aaUSDCBalance);
     event TxGasFactorUpdated(uint256 prevFactor, uint256 currentFactor);
+    event ProfitTakeRatioUpdated(uint256 prevRatio, uint256 currentRatio);
 
     error UnsupportedOrderType();
     error OrderCreationError(
@@ -82,7 +90,7 @@ contract Gmxv2OrderModule is Ownable {
     );
 
     struct OrderParamBase {
-        uint256 positionId; //blocknumber + transactionId + logId
+        uint256 positionId; //blocknumber + transactionId + logId: the trade that copy from; 0: not a copy trade.
         address market;
         Order.OrderType orderType;
         bool isLong;
@@ -100,6 +108,11 @@ contract Gmxv2OrderModule is Ownable {
      */
     modifier onlyOperator() {
         require(msg.sender == operator, "401");
+        _;
+    }
+
+    modifier onlyOrderHandler() {
+        require(msg.sender == ORDER_HANDLER, "401");
         _;
     }
 
@@ -158,9 +171,11 @@ contract Gmxv2OrderModule is Ownable {
     {
         uint256 startGasLeft = gasleft();
         uint256 ethPrice = getPriceFeedPrice();
-        uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType) * tx.gasprice;
+        bool isSaveCollateral = _orderBase.positionId > 0 && _orderBase.orderType == Order.OrderType.MarketDecrease
+            && _orderParam.sizeDeltaUsd > 0;
+        uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType, isSaveCollateral) * tx.gasprice;
         (bytes32 _orderKey, bool _isExecutionFeePayed) =
-            _newOrder(_executionGasFee, triggerPrice, _orderBase, _orderParam);
+            _newOrder(_executionGasFee, triggerPrice, isSaveCollateral, _orderBase, _orderParam);
         orderKey = _orderKey;
 
         uint256 gasFeeAmount = _adjustGasUsage(startGasLeft - gasleft()) * tx.gasprice;
@@ -183,7 +198,9 @@ contract Gmxv2OrderModule is Ownable {
     {
         uint256 lastGasLeft = gasleft();
         uint256 ethPrice = getPriceFeedPrice();
-        uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType) * tx.gasprice;
+        bool isSaveCollateral = _orderBase.positionId > 0 && _orderBase.orderType == Order.OrderType.MarketDecrease
+            && orderParams[0].sizeDeltaUsd > 0;
+        uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType, isSaveCollateral) * tx.gasprice;
         uint256 multiplierFactor = DATASTORE.getUint(Keys.EXECUTION_GAS_FEE_MULTIPLIER_FACTOR);
         uint256 gasFeeAmount;
 
@@ -191,7 +208,8 @@ contract Gmxv2OrderModule is Ownable {
         orderKeys = new bytes32[](len);
         for (uint256 i; i < len; i++) {
             OrderParam memory _orderParam = orderParams[i];
-            (bytes32 _orderKey, bool _isExecutionFeePayed) = _newOrder(_executionGasFee, 0, _orderBase, _orderParam);
+            (bytes32 _orderKey, bool _isExecutionFeePayed) =
+                _newOrder(_executionGasFee, 0, isSaveCollateral, _orderBase, _orderParam);
             orderKeys[i] = _orderKey;
             uint256 gasUsed = lastGasLeft - gasleft();
             lastGasLeft = gasleft();
@@ -207,6 +225,7 @@ contract Gmxv2OrderModule is Ownable {
     function _newOrder(
         uint256 _executionGasFee,
         uint256 triggerPrice,
+        bool isSaveCollateral,
         OrderParamBase memory _orderBase,
         OrderParam memory _orderParam
     ) internal returns (bytes32 orderKey, bool isExecutionFeePayed) {
@@ -244,11 +263,16 @@ contract Gmxv2OrderModule is Ownable {
 
         //build orderParam
         BaseOrderUtils.CreateOrderParams memory cop;
-        _buildOrderCommonPart(_executionGasFee, _orderBase.market, _orderBase.orderType, _orderBase.isLong, cop);
-        _buildOrderCustomPart(_orderParam, cop);
+        _buildOrderCustomPart(_orderBase, _orderParam, cop);
+        cop.numbers.executionFee = _executionGasFee;
         cop.numbers.triggerPrice = triggerPrice;
         if (!isIncreaseOrder) {
             cop.numbers.initialCollateralDeltaAmount = _orderParam.initialCollateralDeltaAmount;
+        }
+
+        if (isSaveCollateral) {
+            cop.addresses.callbackContract = address(this);
+            cop.numbers.callbackGasLimit = CALLBACK_GAS_LIMIT;
         }
 
         //send order
@@ -286,6 +310,12 @@ contract Gmxv2OrderModule is Ownable {
                 triggerPrice,
                 REFERRALS.getReferrer(_orderParam.smartAccount)
             );
+
+            if (isSaveCollateral) {
+                //save position collateral
+                orderCollateral[orderKey] =
+                    getCollateral(_orderParam.smartAccount, _orderBase.market, USDC, _orderBase.isLong);
+            }
         }
         return (orderKey, true);
     }
@@ -314,32 +344,24 @@ contract Gmxv2OrderModule is Ownable {
         }
     }
 
-    function _buildOrderCommonPart(
-        uint256 executionFee,
-        address market,
-        Order.OrderType orderType,
-        bool isLong,
+    function _buildOrderCustomPart(
+        OrderParamBase memory _orderBase,
+        OrderParam memory _orderParam,
         BaseOrderUtils.CreateOrderParams memory params
     ) internal pure {
-        params.numbers.executionFee = executionFee;
-
-        params.addresses.market = market;
-        params.orderType = orderType;
-        params.isLong = isLong;
-    }
-
-    function _buildOrderCustomPart(OrderParam memory _orderParam, BaseOrderUtils.CreateOrderParams memory params)
-        internal
-        pure
-    {
-        params.addresses.receiver = _orderParam.smartAccount;
         params.addresses.initialCollateralToken = USDC;
-
-        params.numbers.sizeDeltaUsd = _orderParam.sizeDeltaUsd;
-        params.numbers.acceptablePrice = _orderParam.acceptablePrice;
-
         params.decreasePositionSwapType = Order.DecreasePositionSwapType.SwapPnlTokenToCollateralToken;
         params.shouldUnwrapNativeToken = true;
+
+        //common part
+        params.addresses.market = _orderBase.market;
+        params.orderType = _orderBase.orderType;
+        params.isLong = _orderBase.isLong;
+
+        //custom part
+        params.addresses.receiver = _orderParam.smartAccount;
+        params.numbers.sizeDeltaUsd = _orderParam.sizeDeltaUsd;
+        params.numbers.acceptablePrice = _orderParam.acceptablePrice;
     }
 
     function _aaTransferUsdc(address aa, uint256 usdcAmount, address to) internal returns (bool isSuccess) {
@@ -369,8 +391,13 @@ contract Gmxv2OrderModule is Ownable {
         return aa;
     }
 
-    function getExecutionFeeGasLimit(Order.OrderType orderType) public view returns (uint256) {
-        return _adjustGasLimitForEstimate(DATASTORE, _estimateExecuteOrderGasLimit(DATASTORE, orderType));
+    function getExecutionFeeGasLimit(Order.OrderType orderType, bool isSaveCollateral) public view returns (uint256) {
+        uint256 gasBase = _adjustGasLimitForEstimate(DATASTORE, _estimateExecuteOrderGasLimit(DATASTORE, orderType));
+        if (isSaveCollateral) {
+            return gasBase + CALLBACK_GAS_LIMIT;
+        } else {
+            return gasBase;
+        }
     }
 
     // @dev adjust the estimated gas limit to help ensure the execution fee is sufficient during
@@ -463,7 +490,7 @@ contract Gmxv2OrderModule is Ownable {
     }
 
     function updateEthPriceMultiplier() external {
-        address priceFeedAddress = IDataStore(DATASTORE).getAddress(ETH_PRICE_FEED_KEY);
+        address priceFeedAddress = DATASTORE.getAddress(ETH_PRICE_FEED_KEY);
         IPriceFeed priceFeed = IPriceFeed(priceFeedAddress);
         uint256 priceFeedDecimal = uint256(IPriceFeed(priceFeed).decimals());
         ethPriceMultiplier = (10 ** priceFeedDecimal) * getPriceFeedMultiplier(DATASTORE) / (10 ** 30);
@@ -480,5 +507,85 @@ contract Gmxv2OrderModule is Ownable {
         uint256 _prevFactor = txGasFactor;
         txGasFactor = _txGasFactor;
         emit TxGasFactorUpdated(_prevFactor, _txGasFactor);
+    }
+
+    function updateProfitTakeRatio(uint256 _ratio) external onlyOperator {
+        require(_ratio <= MAX_PROFIT_TAKE_RATIO, "400");
+        uint256 _prevRatio = profitTakeRatio;
+        profitTakeRatio = _ratio;
+        emit ProfitTakeRatioUpdated(_prevRatio, _ratio);
+    }
+
+    // @dev called after an order execution
+    // @param key the key of the order
+    // @param order the order that was executed
+    function afterOrderExecution(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory eventData)
+        external
+        onlyOrderHandler
+    {
+        if (eventData.addressItems.items[0].value != USDC) {
+            //exception
+            return;
+        }
+
+        uint256 outputAmount = eventData.uintItems.items[0].value;
+        if (outputAmount < USDC_MULTIPLIER) {
+            //do not take profit if output is too small.
+            return;
+        }
+
+        uint256 prevCollateral = orderCollateral[key];
+        if (prevCollateral == 0) {
+            //exception
+            return;
+        }
+
+        uint256 curCollateral = getCollateral(order.addresses.account, order.addresses.market, USDC, order.flags.isLong);
+        if (curCollateral >= prevCollateral) {
+            //exception
+            return;
+        }
+
+        uint256 collateralDelta = prevCollateral - curCollateral;
+        if (outputAmount < collateralDelta + USDC_MULTIPLIER) {
+            //do not take profit if it's loss or profit is too small.
+            return;
+        }
+
+        //take profit
+        uint256 profitTaken = (outputAmount - collateralDelta) * profitTakeRatio / 100;
+        _aaTransferUsdc(order.addresses.account, profitTaken, owner());
+
+        delete orderCollateral[key];
+    }
+
+    // @dev called after an order cancellation
+    // @param key the key of the order
+    // @param order the order that was cancelled
+    function afterOrderCancellation(bytes32 key, Order.Props memory, EventUtils.EventLogData memory)
+        external
+        onlyOrderHandler
+    {
+        delete orderCollateral[key];
+    }
+
+    // @dev called after an order has been frozen, see OrderUtils.freezeOrder in OrderHandler for more info
+    // @param key the key of the order
+    // @param order the order that was frozen
+    function afterOrderFrozen(bytes32, Order.Props memory, EventUtils.EventLogData memory) external onlyOrderHandler {}
+
+    // @dev get the key for a position, then get the collateral of the position
+    // @param account the position's account
+    // @param market the position's market
+    // @param collateralToken the position's collateralToken
+    // @param isLong whether the position is long or short
+    // @return the collateral amount amplified in collateral token decimals.
+    function getCollateral(address account, address market, address collateralToken, bool isLong)
+        internal
+        view
+        returns (uint256)
+    {
+        bytes32 key = keccak256(abi.encode(account, market, collateralToken, isLong));
+        return DATASTORE.getUint(keccak256(abi.encode(key, COLLATERAL_AMOUNT)));
     }
 }
