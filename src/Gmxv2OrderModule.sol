@@ -17,11 +17,13 @@ import "./interfaces/IExchangeRouter.sol";
 import "./interfaces/IReferrals.sol";
 import "./interfaces/IOrderCallbackReceiver.sol";
 
-//v1.2.1
+//v1.3.0
 //Arbitrum equipped
 //Operator should approve WETH to this contract
 contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
-    address public operator;
+    address private constant SENTINEL_OPERATORS = address(0x1);
+    mapping(address => address) public operators;
+
     uint256 public ethPriceMultiplier = 10 ** 12; // cache for gas saving;
     uint256 public txGasFactor = 110; // 110%, a buffer to track L1 gas price movements;
     mapping(bytes32 => uint256) public orderCollateral; //[order key, position collateral]
@@ -56,7 +58,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     uint256 private constant MIN_PROFIT_TAKE_BASE = 5 * USDC_MULTIPLIER;
 
     event ProfitTakerTransferred(address indexed previousTaker, address indexed newTaker);
-    event OperatorTransferred(address indexed previousOperator, address indexed newOperator);
+    event EnabledOperator(address indexed operator);
+    event DisabledOperator(address indexed operator);
     event NewSmartAccount(address indexed creator, address userEOA, address smartAccount);
     event OrderCreated(
         address indexed aa,
@@ -110,7 +113,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
      * @dev Only allows addresses with the operator role to call the function.
      */
     modifier onlyOperator() {
-        require(msg.sender == operator, "401");
+        require(SENTINEL_OPERATORS != msg.sender && operators[msg.sender] != address(0), "401");
         _;
     }
 
@@ -120,9 +123,10 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     }
 
     constructor(address initialOperator, address initialProfitTaker) Ownable(msg.sender) {
-        operator = initialOperator;
+        operators[initialOperator] = SENTINEL_OPERATORS;
+        operators[SENTINEL_OPERATORS] = initialOperator;
         profitTaker = initialProfitTaker;
-        emit OperatorTransferred(address(0), initialOperator);
+        emit EnabledOperator(initialOperator);
         emit ProfitTakerTransferred(address(0), initialProfitTaker);
     }
 
@@ -132,10 +136,24 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         emit ProfitTakerTransferred(oldTaker, newProfitTaker);
     }
 
-    function transferOperator(address newOperator) external onlyOwner {
-        address oldOperator = operator;
-        operator = newOperator;
-        emit OperatorTransferred(oldOperator, newOperator);
+    function enableOperator(address _operator) external onlyOwner {
+        // operator address cannot be null or sentinel. operator cannot be added twice.
+        require(_operator != address(0) && _operator != SENTINEL_OPERATORS && operators[_operator] == address(0), "400");
+
+        operators[_operator] = operators[SENTINEL_OPERATORS];
+        operators[SENTINEL_OPERATORS] = _operator;
+
+        emit EnabledOperator(_operator);
+    }
+
+    function disableOperator(address prevoperator, address _operator) external onlyOwner {
+        // Validate operator address and check that it corresponds to operator index.
+        require(
+            _operator != address(0) && _operator != SENTINEL_OPERATORS && operators[prevoperator] == _operator, "400"
+        );
+        operators[prevoperator] = operators[_operator];
+        delete operators[_operator];
+        emit DisabledOperator(_operator);
     }
 
     function deployAA(address userEOA, address _referrer) external returns (bool isSuccess) {
@@ -149,11 +167,11 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         emit NewSmartAccount(msg.sender, userEOA, aa);
         isSuccess = true;
 
-        if (msg.sender == operator) {
+        if (operators[msg.sender] != address(0)) {
             uint256 ethPrice = getPriceFeedPrice();
             uint256 gasUsed = _adjustGasUsage(startGas - gasleft());
             //transfer gas fee to TinySwap...
-            isSuccess = _aaTransferUsdc(aa, _calcUsdc(gasUsed * tx.gasprice, ethPrice), operator);
+            isSuccess = _aaTransferUsdc(aa, _calcUsdc(gasUsed * tx.gasprice, ethPrice), msg.sender);
         }
     }
 
@@ -171,7 +189,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         }
 
         uint256 gasUsed = _adjustGasUsage(startGas - gasleft());
-        _aaTransferEth(smartAccount, gasUsed * tx.gasprice, operator);
+        _aaTransferEth(smartAccount, gasUsed * tx.gasprice, msg.sender);
     }
 
     //single order, could contain trigger price
@@ -213,7 +231,6 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
             && orderParams[0].sizeDeltaUsd > 0;
         uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType, isSaveCollateral) * tx.gasprice;
         uint256 multiplierFactor = DATASTORE.getUint(Keys.EXECUTION_GAS_FEE_MULTIPLIER_FACTOR);
-        uint256 gasFeeAmount;
 
         uint256 len = orderParams.length;
         orderKeys = new bytes32[](len);
@@ -224,7 +241,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
             orderKeys[i] = _orderKey;
             uint256 gasUsed = lastGasLeft - gasleft();
             lastGasLeft = gasleft();
-            gasFeeAmount = Precision.applyFactor(gasUsed, multiplierFactor) * txGasFactor / 100 * tx.gasprice;
+            uint256 gasFeeAmount = Precision.applyFactor(gasUsed, multiplierFactor) * txGasFactor / 100 * tx.gasprice;
             _payGas(
                 _orderParam.smartAccount,
                 _isExecutionFeePayed ? gasFeeAmount + _executionGasFee : gasFeeAmount,
@@ -241,7 +258,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         OrderParam memory _orderParam
     ) internal returns (bytes32 orderKey, bool isExecutionFeePayed) {
         //transfer execution fee WETH from operator to GMX Vault
-        bool isSuccess = IERC20(WETH).transferFrom(operator, ORDER_VAULT, _executionGasFee);
+        bool isSuccess = IERC20(WETH).transferFrom(msg.sender, ORDER_VAULT, _executionGasFee);
         if (!isSuccess) {
             emit OrderCreationFailed(
                 _orderParam.smartAccount,
@@ -344,10 +361,10 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     function _payGas(address aa, uint256 totalGasFeeEth, uint256 _ethPrice) internal returns (bool isSuccess) {
         if (aa.balance < totalGasFeeEth) {
             //transfer gas fee and execution fee USDC from AA to TinySwap
-            isSuccess = _aaTransferUsdc(aa, _calcUsdc(totalGasFeeEth, _ethPrice), operator);
+            isSuccess = _aaTransferUsdc(aa, _calcUsdc(totalGasFeeEth, _ethPrice), msg.sender);
         } else {
             //convert ETH to WETH to operator
-            bytes memory data = abi.encodeWithSelector(IWNT(WETH).depositTo.selector, operator);
+            bytes memory data = abi.encodeWithSelector(IWNT(WETH).depositTo.selector, msg.sender);
             isSuccess = IModuleManager(aa).execTransactionFromModule(WETH, totalGasFeeEth, data, Enum.Operation.Call);
         }
         if (!isSuccess) {
@@ -513,14 +530,14 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         );
     }
 
-    function updateTxGasFactor(uint256 _txGasFactor) external onlyOperator {
+    function updateTxGasFactor(uint256 _txGasFactor) external onlyOwner {
         require(_txGasFactor <= MAX_TXGAS_FACTOR, "400");
         uint256 _prevFactor = txGasFactor;
         txGasFactor = _txGasFactor;
         emit TxGasFactorUpdated(_prevFactor, _txGasFactor);
     }
 
-    function updateProfitTakeRatio(uint256 _ratio) external onlyOperator {
+    function updateProfitTakeRatio(uint256 _ratio) external onlyOwner {
         require(_ratio <= MAX_PROFIT_TAKE_RATIO, "400");
         uint256 _prevRatio = profitTakeRatio;
         profitTakeRatio = _ratio;
