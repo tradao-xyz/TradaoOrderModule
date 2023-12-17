@@ -203,13 +203,15 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         bool isSaveCollateral = _orderBase.positionId > 0 && BaseOrderUtils.isDecreaseOrder(_orderBase.orderType)
             && _orderParam.sizeDeltaUsd > 0;
         uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType, isSaveCollateral) * tx.gasprice;
-        (bytes32 _orderKey, bool _isExecutionFeePayed) =
-            _newOrder(_executionGasFee, triggerPrice, isSaveCollateral, _orderBase, _orderParam);
-        orderKey = _orderKey;
+        orderKey = _newOrder(_executionGasFee, triggerPrice, isSaveCollateral, _orderBase, _orderParam);
 
         uint256 gasFeeAmount = _adjustGasUsage(startGasLeft - gasleft()) * tx.gasprice;
         _payGas(
-            _orderParam.smartAccount, _isExecutionFeePayed ? gasFeeAmount + _executionGasFee : gasFeeAmount, ethPrice
+            _orderParam.smartAccount,
+            orderKey == 0x0000000000000000000000000000000000000000000000000000000000000001
+                ? gasFeeAmount
+                : gasFeeAmount + _executionGasFee,
+            ethPrice
         );
     }
 
@@ -236,27 +238,28 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         orderKeys = new bytes32[](len);
         for (uint256 i; i < len; i++) {
             OrderParam memory _orderParam = orderParams[i];
-            (bytes32 _orderKey, bool _isExecutionFeePayed) =
-                _newOrder(_executionGasFee, 0, isSaveCollateral, _orderBase, _orderParam);
-            orderKeys[i] = _orderKey;
+            orderKeys[i] = _newOrder(_executionGasFee, 0, isSaveCollateral, _orderBase, _orderParam);
             uint256 gasUsed = lastGasLeft - gasleft();
             lastGasLeft = gasleft();
             uint256 gasFeeAmount = Precision.applyFactor(gasUsed, multiplierFactor) * txGasFactor / 100 * tx.gasprice;
             _payGas(
                 _orderParam.smartAccount,
-                _isExecutionFeePayed ? gasFeeAmount + _executionGasFee : gasFeeAmount,
+                orderKeys[i] == 0x0000000000000000000000000000000000000000000000000000000000000001
+                    ? gasFeeAmount
+                    : gasFeeAmount + _executionGasFee,
                 ethPrice
             );
         }
     }
 
+    //@return, bytes32(uint256(1)): pay execution Fee failed
     function _newOrder(
         uint256 _executionGasFee,
         uint256 triggerPrice,
         bool isSaveCollateral,
         OrderParamBase memory _orderBase,
         OrderParam memory _orderParam
-    ) internal returns (bytes32 orderKey, bool isExecutionFeePayed) {
+    ) internal returns (bytes32 orderKey) {
         //transfer execution fee WETH from operator to GMX Vault
         bool isSuccess = IERC20(WETH).transferFrom(msg.sender, ORDER_VAULT, _executionGasFee);
         if (!isSuccess) {
@@ -269,7 +272,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
                 triggerPrice,
                 Enum.FailureReason.PayExecutionFeeFailed
             );
-            return (0, false);
+            return bytes32(0x0000000000000000000000000000000000000000000000000000000000000001); //bytes32(uint256(1))
         }
 
         bool isIncreaseOrder = BaseOrderUtils.isIncreaseOrder(_orderBase.orderType);
@@ -285,7 +288,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
                     triggerPrice,
                     Enum.FailureReason.TransferCollateralToVaultFailed
                 );
-                return (0, true);
+                return 0;
             }
         }
 
@@ -345,7 +348,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
                     getCollateral(_orderParam.smartAccount, _orderBase.market, USDC, _orderBase.isLong);
             }
         }
-        return (orderKey, true);
+        return orderKey;
     }
 
     //return orderKey == 0 if failed.
