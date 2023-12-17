@@ -30,6 +30,9 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     uint256 public profitTakeRatio = 0; // 0%
     address public profitTaker;
 
+    uint256 public simpleGasBase = 1000000; //deployAA, cancelOrder
+    uint256 public newOrderGasBase = 2000000; //every newOrder
+
     uint256 private constant MAX_PROFIT_TAKE_RATIO = 10; //10%;
     uint256 private constant MAX_TXGAS_FACTOR = 200; // 200%;
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
@@ -57,6 +60,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     uint256 private constant CALLBACK_GAS_LIMIT = 100000; //estimated
     uint256 private constant MIN_PROFIT_TAKE_BASE = 5 * USDC_MULTIPLIER;
 
+    event GasBaseUpdated(uint256 simple, uint256 newOrder);
     event ProfitTakerTransferred(address indexed previousTaker, address indexed newTaker);
     event EnabledOperator(address indexed operator);
     event DisabledOperator(address indexed operator);
@@ -171,7 +175,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
 
         if (operators[msg.sender] != address(0)) {
             uint256 ethPrice = getPriceFeedPrice();
-            uint256 gasUsed = _adjustGasUsage(startGas - gasleft());
+            uint256 gasUsed = _adjustGasUsage(startGas - gasleft(), simpleGasBase);
             //transfer gas fee to TinySwap...
             isSuccess = _aaTransferUsdc(aa, _calcUsdc(gasUsed * tx.gasprice, ethPrice), msg.sender);
         }
@@ -190,7 +194,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
             emit OrderCancelled(smartAccount, key);
         }
 
-        uint256 gasUsed = _adjustGasUsage(startGas - gasleft());
+        uint256 gasUsed = _adjustGasUsage(startGas - gasleft(), simpleGasBase);
         _aaTransferEth(smartAccount, gasUsed * tx.gasprice, msg.sender);
     }
 
@@ -207,7 +211,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType, isSaveCollateral) * tx.gasprice;
         orderKey = _newOrder(_executionGasFee, triggerPrice, isSaveCollateral, _orderBase, _orderParam);
 
-        uint256 gasFeeAmount = _adjustGasUsage(startGasLeft - gasleft()) * tx.gasprice;
+        uint256 gasFeeAmount = _adjustGasUsage(startGasLeft - gasleft(), newOrderGasBase) * tx.gasprice;
         _payGas(
             _orderParam.smartAccount,
             orderKey == 0x0000000000000000000000000000000000000000000000000000000000000001
@@ -235,6 +239,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
             && orderParams[0].sizeDeltaUsd > 0;
         uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType, isSaveCollateral) * tx.gasprice;
         uint256 multiplierFactor = DATASTORE.getUint(Keys.EXECUTION_GAS_FEE_MULTIPLIER_FACTOR);
+        uint256 _newOrderGasBase = newOrderGasBase;
 
         uint256 len = orderParams.length;
         orderKeys = new bytes32[](len);
@@ -243,7 +248,9 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
             orderKeys[i] = _newOrder(_executionGasFee, 0, isSaveCollateral, _orderBase, _orderParam);
             uint256 gasUsed = lastGasLeft - gasleft();
             lastGasLeft = gasleft();
-            uint256 gasFeeAmount = Precision.applyFactor(gasUsed, multiplierFactor) * txGasFactor / 100 * tx.gasprice;
+            uint256 gasFeeAmount = (
+                _newOrderGasBase + (Precision.applyFactor(gasUsed, multiplierFactor) * txGasFactor / 100)
+            ) * tx.gasprice;
             _payGas(
                 _orderParam.smartAccount,
                 orderKeys[i] == 0x0000000000000000000000000000000000000000000000000000000000000001
@@ -429,22 +436,17 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         if (isSaveCollateral) {
             gasBase = gasBase + CALLBACK_GAS_LIMIT;
         }
-        return _adjustGasLimitForEstimate(DATASTORE, gasBase);
+        return _adjustGasLimitForEstimate(gasBase);
     }
 
     // @dev adjust the estimated gas limit to help ensure the execution fee is sufficient during
     // the actual execution
     // @param dataStore DataStore
     // @param estimatedGasLimit the estimated gas limit
-    function _adjustGasLimitForEstimate(IDataStore dataStore, uint256 estimatedGasLimit)
-        internal
-        view
-        returns (uint256)
-    {
-        uint256 baseGasLimit = dataStore.getUint(Keys.ESTIMATED_GAS_FEE_BASE_AMOUNT);
-        uint256 multiplierFactor = dataStore.getUint(Keys.ESTIMATED_GAS_FEE_MULTIPLIER_FACTOR);
-        uint256 gasLimit = baseGasLimit + Precision.applyFactor(estimatedGasLimit, multiplierFactor);
-        return gasLimit;
+    function _adjustGasLimitForEstimate(uint256 estimatedGasLimit) internal view returns (uint256) {
+        uint256 baseGasLimit = DATASTORE.getUint(Keys.ESTIMATED_GAS_FEE_BASE_AMOUNT);
+        uint256 multiplierFactor = DATASTORE.getUint(Keys.ESTIMATED_GAS_FEE_MULTIPLIER_FACTOR);
+        return baseGasLimit + Precision.applyFactor(estimatedGasLimit, multiplierFactor);
     }
 
     // @dev the estimated gas limit for orders
@@ -467,13 +469,21 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     // @dev adjust the gas usage to pay operator
     // @param dataStore DataStore
     // @param gasUsed the amount of gas used
-    function _adjustGasUsage(uint256 gasUsed) internal view returns (uint256) {
+    function _adjustGasUsage(uint256 gasUsed, uint256 baseGas) internal view returns (uint256) {
         // the gas cost is estimated based on the gasprice of the request txn
         // the actual cost may be higher if the gasprice is higher in the execution txn
         // the multiplierFactor should be adjusted to account for this
         uint256 multiplierFactor = DATASTORE.getUint(Keys.EXECUTION_GAS_FEE_MULTIPLIER_FACTOR);
         uint256 gasLimit = Precision.applyFactor(gasUsed, multiplierFactor);
-        return gasLimit * txGasFactor / 100;
+        return baseGas + (gasLimit * txGasFactor / 100);
+    }
+
+    function updateGasBase(uint256 _simpleGasBase, uint256 _newOrderGasBase) external onlyOperator {
+        uint256 baseGasLimit = DATASTORE.getUint(Keys.EXECUTION_GAS_FEE_BASE_AMOUNT);
+        require(_simpleGasBase < _newOrderGasBase && _newOrderGasBase < baseGasLimit, "400");
+        simpleGasBase = _simpleGasBase;
+        newOrderGasBase = _newOrderGasBase;
+        emit GasBaseUpdated(_simpleGasBase, _newOrderGasBase);
     }
 
     function getPriceFeedPrice() public view returns (uint256) {
@@ -528,7 +538,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         ethPriceMultiplier = (10 ** priceFeedDecimal) * getPriceFeedMultiplier(DATASTORE) / (10 ** 30);
     }
 
-    function setReferralCode(address smartAccount) public onlyOperator returns (bool isSuccess) {
+    function setReferralCode(address smartAccount) public returns (bool isSuccess) {
         return IModuleManager(smartAccount).execTransactionFromModule(
             REFERRALSTORAGE, 0, SETREFERRALCODECALLDATA, Enum.Operation.Call
         );
