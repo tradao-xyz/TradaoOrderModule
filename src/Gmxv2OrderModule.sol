@@ -425,12 +425,11 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     }
 
     function getExecutionFeeGasLimit(Order.OrderType orderType, bool isSaveCollateral) public view returns (uint256) {
-        uint256 gasBase = _adjustGasLimitForEstimate(DATASTORE, _estimateExecuteOrderGasLimit(DATASTORE, orderType));
+        uint256 gasBase = _estimateExecuteOrderGasLimit(DATASTORE, orderType);
         if (isSaveCollateral) {
-            return gasBase + CALLBACK_GAS_LIMIT;
-        } else {
-            return gasBase;
+            gasBase = gasBase + CALLBACK_GAS_LIMIT;
         }
+        return _adjustGasLimitForEstimate(DATASTORE, gasBase);
     }
 
     // @dev adjust the estimated gas limit to help ensure the execution fee is sufficient during
