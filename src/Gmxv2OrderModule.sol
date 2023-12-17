@@ -25,16 +25,14 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     mapping(address => address) public operators;
 
     uint256 public ethPriceMultiplier = 10 ** 12; // cache for gas saving;
-    uint256 public txGasFactor = 110; // 110%, a buffer to track L1 gas price movements;
     mapping(bytes32 => uint256) public orderCollateral; //[order key, position collateral]
     uint256 public profitTakeRatio = 0; // 0%
     address public profitTaker;
 
-    uint256 public simpleGasBase = 1000000; //deployAA, cancelOrder
+    uint256 public simpleGasBase = 1100000; //deployAA, cancelOrder
     uint256 public newOrderGasBase = 2000000; //every newOrder
 
-    uint256 private constant MAX_PROFIT_TAKE_RATIO = 10; //10%;
-    uint256 private constant MAX_TXGAS_FACTOR = 200; // 200%;
+    uint256 private constant MAX_PROFIT_TAKE_RATIO = 1000; //10.00%;
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address private constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
     IDataStore private constant DATASTORE = IDataStore(0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8);
@@ -86,7 +84,6 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     );
     event OrderCancelled(address indexed aa, bytes32 orderKey);
     event PayGasFailed(address indexed aa, uint256 gasFeeEth, uint256 ethPrice, uint256 aaUSDCBalance);
-    event TxGasFactorUpdated(uint256 prevFactor, uint256 currentFactor);
     event ProfitTakeRatioUpdated(uint256 prevRatio, uint256 currentRatio);
     event TakeProfitSuccess(address indexed account, bytes32 orderKey, uint256 amount, address to);
     event TakeProfitFailed(address indexed account, bytes32 orderKey, Enum.TakeProfitFailureReason reason);
@@ -248,9 +245,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
             orderKeys[i] = _newOrder(_executionGasFee, 0, isSaveCollateral, _orderBase, _orderParam);
             uint256 gasUsed = lastGasLeft - gasleft();
             lastGasLeft = gasleft();
-            uint256 gasFeeAmount = (
-                _newOrderGasBase + (Precision.applyFactor(gasUsed, multiplierFactor) * txGasFactor / 100)
-            ) * tx.gasprice;
+            uint256 gasFeeAmount = (_newOrderGasBase + Precision.applyFactor(gasUsed, multiplierFactor)) * tx.gasprice;
             _payGas(
                 _orderParam.smartAccount,
                 orderKeys[i] == 0x0000000000000000000000000000000000000000000000000000000000000001
@@ -475,7 +470,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         // the multiplierFactor should be adjusted to account for this
         uint256 multiplierFactor = DATASTORE.getUint(Keys.EXECUTION_GAS_FEE_MULTIPLIER_FACTOR);
         uint256 gasLimit = Precision.applyFactor(gasUsed, multiplierFactor);
-        return baseGas + (gasLimit * txGasFactor / 100);
+        return baseGas + gasLimit;
     }
 
     function updateGasBase(uint256 _simpleGasBase, uint256 _newOrderGasBase) external onlyOperator {
@@ -544,13 +539,6 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         );
     }
 
-    function updateTxGasFactor(uint256 _txGasFactor) external onlyOwner {
-        require(_txGasFactor <= MAX_TXGAS_FACTOR, "400");
-        uint256 _prevFactor = txGasFactor;
-        txGasFactor = _txGasFactor;
-        emit TxGasFactorUpdated(_prevFactor, _txGasFactor);
-    }
-
     function updateProfitTakeRatio(uint256 _ratio) external onlyOwner {
         require(_ratio <= MAX_PROFIT_TAKE_RATIO, "400");
         uint256 _prevRatio = profitTakeRatio;
@@ -601,7 +589,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         }
 
         //take profit
-        uint256 profitTaken = (outputAmount - collateralDelta) * profitTakeRatio / 100;
+        uint256 profitTaken = (outputAmount - collateralDelta) * profitTakeRatio / 10000;
         address _profitTaker = profitTaker;
         if (_aaTransferUsdc(order.addresses.account, profitTaken, _profitTaker)) {
             emit TakeProfitSuccess(order.addresses.account, key, profitTaken, _profitTaker);
