@@ -8,9 +8,17 @@ abstract contract Enum {
         DelegateCall
     }
 
-    enum FailureReason {
+    enum OrderFailureReason {
         PayExecutionFeeFailed,
         TransferCollateralToVaultFailed,
         CreateOrderFailed
+    }
+
+    enum TakeProfitFailureReason {
+        PrevCollateralMissed,
+        InvalidCollateralToken,
+        CollateralAmountInversed,
+        TransferError,
+        ProfitTooSmall
     }
 }

@@ -78,12 +78,14 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         uint256 collateralDelta,
         uint256 acceptablePrice,
         uint256 triggerPrice,
-        Enum.FailureReason reason
+        Enum.OrderFailureReason reason
     );
     event OrderCancelled(address indexed aa, bytes32 orderKey);
     event PayGasFailed(address indexed aa, uint256 gasFeeEth, uint256 ethPrice, uint256 aaUSDCBalance);
     event TxGasFactorUpdated(uint256 prevFactor, uint256 currentFactor);
     event ProfitTakeRatioUpdated(uint256 prevRatio, uint256 currentRatio);
+    event TakeProfitSuccess(address indexed account, bytes32 orderKey, uint256 amount, address to);
+    event TakeProfitFailed(address indexed account, bytes32 orderKey, Enum.TakeProfitFailureReason reason);
 
     error UnsupportedOrderType();
     error OrderCreationError(
@@ -270,7 +272,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
                 _orderParam.initialCollateralDeltaAmount,
                 _orderParam.acceptablePrice,
                 triggerPrice,
-                Enum.FailureReason.PayExecutionFeeFailed
+                Enum.OrderFailureReason.PayExecutionFeeFailed
             );
             return bytes32(0x0000000000000000000000000000000000000000000000000000000000000001); //bytes32(uint256(1))
         }
@@ -286,7 +288,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
                     _orderParam.initialCollateralDeltaAmount,
                     _orderParam.acceptablePrice,
                     triggerPrice,
-                    Enum.FailureReason.TransferCollateralToVaultFailed
+                    Enum.OrderFailureReason.TransferCollateralToVaultFailed
                 );
                 return 0;
             }
@@ -327,7 +329,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
                     _orderParam.initialCollateralDeltaAmount,
                     _orderParam.acceptablePrice,
                     triggerPrice,
-                    Enum.FailureReason.CreateOrderFailed
+                    Enum.OrderFailureReason.CreateOrderFailed
                 );
             }
         } else {
@@ -557,36 +559,46 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         uint256 prevCollateral = orderCollateral[key];
         if (prevCollateral == 0) {
             //exception
+            emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.PrevCollateralMissed);
             return;
         }
         delete orderCollateral[key];
 
         if (eventData.addressItems.items[0].value != USDC) {
             //exception
+            emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.InvalidCollateralToken);
             return;
         }
 
         uint256 outputAmount = eventData.uintItems.items[0].value;
         if (outputAmount < MIN_PROFIT_TAKE_BASE) {
             //do not take profit if output is too small.
+            emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.ProfitTooSmall);
             return;
         }
 
         uint256 curCollateral = getCollateral(order.addresses.account, order.addresses.market, USDC, order.flags.isLong);
         if (curCollateral >= prevCollateral) {
             //exception
+            emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.CollateralAmountInversed);
             return;
         }
 
         uint256 collateralDelta = prevCollateral - curCollateral;
         if (outputAmount < collateralDelta + MIN_PROFIT_TAKE_BASE) {
             //do not take profit if it's loss or profit is too small.
+            emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.ProfitTooSmall);
             return;
         }
 
         //take profit
         uint256 profitTaken = (outputAmount - collateralDelta) * profitTakeRatio / 100;
-        _aaTransferUsdc(order.addresses.account, profitTaken, profitTaker);
+        address _profitTaker = profitTaker;
+        if (_aaTransferUsdc(order.addresses.account, profitTaken, _profitTaker)) {
+            emit TakeProfitSuccess(order.addresses.account, key, profitTaken, _profitTaker);
+        } else {
+            emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.TransferError);
+        }
     }
 
     // @dev called after an order cancellation
