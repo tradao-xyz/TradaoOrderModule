@@ -54,7 +54,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     IReferrals private constant REFERRALS = IReferrals(0xC8F9b1A0a120eFA05EEeb28B10b14FdE18Bb0F50);
     address private constant ORDER_HANDLER = 0x352f684ab9e97a6321a13CF03A61316B681D9fD2;
     bytes32 private constant COLLATERAL_AMOUNT = 0xb88da5cd71628783263477a6261c2906e380aa32e85e2e87b2463bbdc1127221; //keccak256(abi.encode("COLLATERAL_AMOUNT"));
-    uint256 private constant CALLBACK_GAS_LIMIT = 300000; //todo
+    uint256 private constant CALLBACK_GAS_LIMIT = 100000; //estimated
     uint256 private constant MIN_PROFIT_TAKE_BASE = 5 * USDC_MULTIPLIER;
 
     event ProfitTakerTransferred(address indexed previousTaker, address indexed newTaker);
