@@ -65,7 +65,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     event NewSmartAccount(address indexed creator, address userEOA, address smartAccount);
     event OrderCreated(
         address indexed aa,
-        uint256 indexed positionId,
+        address indexed followee,
         uint256 sizeDelta,
         uint256 collateralDelta,
         uint256 acceptablePrice,
@@ -75,7 +75,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     );
     event OrderCreationFailed(
         address indexed aa,
-        uint256 indexed positionId,
+        address indexed followee,
         uint256 sizeDelta,
         uint256 collateralDelta,
         uint256 acceptablePrice,
@@ -91,7 +91,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     error UnsupportedOrderType();
     error OrderCreationError(
         address aa,
-        uint256 positionId,
+        address followee,
         uint256 sizeDelta,
         uint256 collateralDelta,
         uint256 acceptablePrice,
@@ -99,7 +99,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     );
 
     struct OrderParamBase {
-        uint256 positionId; //blocknumber + transactionId + logId: the trade that copy from; 0: not a copy trade.
+        address followee; //the trader that copy from; 0: not a copy trade.
         address market;
         Order.OrderType orderType;
         bool isLong;
@@ -203,8 +203,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     {
         uint256 startGasLeft = gasleft();
         uint256 ethPrice = getPriceFeedPrice();
-        bool isSaveCollateral = _orderBase.positionId > 0 && BaseOrderUtils.isDecreaseOrder(_orderBase.orderType)
-            && _orderParam.sizeDeltaUsd > 0;
+        bool isSaveCollateral = _orderBase.followee != address(0)
+            && BaseOrderUtils.isDecreaseOrder(_orderBase.orderType) && _orderParam.sizeDeltaUsd > 0;
         uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType, isSaveCollateral) * tx.gasprice;
         orderKey = _newOrder(_executionGasFee, triggerPrice, isSaveCollateral, _orderBase, _orderParam);
 
@@ -232,8 +232,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     {
         uint256 lastGasLeft = gasleft();
         uint256 ethPrice = getPriceFeedPrice();
-        bool isSaveCollateral = _orderBase.positionId > 0 && BaseOrderUtils.isDecreaseOrder(_orderBase.orderType)
-            && orderParams[0].sizeDeltaUsd > 0;
+        bool isSaveCollateral = _orderBase.followee != address(0)
+            && BaseOrderUtils.isDecreaseOrder(_orderBase.orderType) && orderParams[0].sizeDeltaUsd > 0;
         uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType, isSaveCollateral) * tx.gasprice;
         uint256 multiplierFactor = DATASTORE.getUint(Keys.EXECUTION_GAS_FEE_MULTIPLIER_FACTOR);
         uint256 _newOrderGasBase = newOrderGasBase;
@@ -269,7 +269,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         if (!isSuccess) {
             emit OrderCreationFailed(
                 _orderParam.smartAccount,
-                _orderBase.positionId,
+                _orderBase.followee,
                 _orderParam.sizeDeltaUsd,
                 _orderParam.initialCollateralDeltaAmount,
                 _orderParam.acceptablePrice,
@@ -285,7 +285,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
             if (!isSuccess) {
                 emit OrderCreationFailed(
                     _orderParam.smartAccount,
-                    _orderBase.positionId,
+                    _orderBase.followee,
                     _orderParam.sizeDeltaUsd,
                     _orderParam.initialCollateralDeltaAmount,
                     _orderParam.acceptablePrice,
@@ -317,7 +317,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
                 //protect user's collateral.
                 revert OrderCreationError(
                     _orderParam.smartAccount,
-                    _orderBase.positionId,
+                    _orderBase.followee,
                     _orderParam.sizeDeltaUsd,
                     _orderParam.initialCollateralDeltaAmount,
                     _orderParam.acceptablePrice,
@@ -326,7 +326,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
             } else {
                 emit OrderCreationFailed(
                     _orderParam.smartAccount,
-                    _orderBase.positionId,
+                    _orderBase.followee,
                     _orderParam.sizeDeltaUsd,
                     _orderParam.initialCollateralDeltaAmount,
                     _orderParam.acceptablePrice,
@@ -337,7 +337,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         } else {
             emit OrderCreated(
                 _orderParam.smartAccount,
-                _orderBase.positionId,
+                _orderBase.followee,
                 _orderParam.sizeDeltaUsd,
                 _orderParam.initialCollateralDeltaAmount,
                 _orderParam.acceptablePrice,
