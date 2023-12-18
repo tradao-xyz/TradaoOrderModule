@@ -15,6 +15,7 @@ abstract contract Enum {
     }
 
     enum TakeProfitFailureReason {
+        Canceled,
         PrevCollateralMissed,
         InvalidCollateralToken,
         CollateralAmountInversed,

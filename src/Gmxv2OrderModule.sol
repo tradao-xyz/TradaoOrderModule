@@ -601,11 +601,15 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     // @dev called after an order cancellation
     // @param key the key of the order
     // @param order the order that was cancelled
-    function afterOrderCancellation(bytes32 key, Order.Props memory, EventUtils.EventLogData memory)
+    function afterOrderCancellation(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory)
         external
         onlyOrderHandler
     {
-        delete orderCollateral[key];
+        uint256 prevCollateral = orderCollateral[key];
+        if (prevCollateral > 0) {
+            emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.Canceled);
+            delete orderCollateral[key];
+        }
     }
 
     // @dev called after an order has been frozen, see OrderUtils.freezeOrder in OrderHandler for more info
