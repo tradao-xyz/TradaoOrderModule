@@ -62,7 +62,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     event ProfitTakerTransferred(address indexed previousTaker, address indexed newTaker);
     event EnabledOperator(address indexed operator);
     event DisabledOperator(address indexed operator);
-    event NewSmartAccount(address indexed creator, address userEOA, address smartAccount);
+    event NewSmartAccount(address indexed creator, address userEOA, uint96 number, address smartAccount);
     event OrderCreated(
         address indexed aa,
         address indexed followee,
@@ -159,15 +159,15 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         emit DisabledOperator(_operator);
     }
 
-    function deployAA(address userEOA, address _referrer) external returns (bool isSuccess) {
+    function deployAA(address userEOA, uint96 number, address _referrer) external returns (bool isSuccess) {
         uint256 startGas = gasleft();
 
-        address aa = _deployAA(userEOA);
+        address aa = _deployAA(userEOA, number);
         setReferralCode(aa);
         if (_referrer != address(0)) {
             REFERRALS.setReferrerFromModule(aa, _referrer);
         }
-        emit NewSmartAccount(msg.sender, userEOA, aa);
+        emit NewSmartAccount(msg.sender, userEOA, number, aa);
         isSuccess = true;
 
         if (operators[msg.sender] != address(0)) {
@@ -412,8 +412,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         isSuccess = IModuleManager(aa).execTransactionFromModule(to, ethAmount, "", Enum.Operation.Call);
     }
 
-    function _deployAA(address userEOA) internal returns (address) {
-        uint256 index = uint256(uint160(userEOA));
+    function _deployAA(address userEOA, uint96 number) internal returns (address) {
+        uint256 index = uint256(bytes32(bytes.concat(bytes20(userEOA), bytes12(number))));
         address aa = BICONOMY_FACTORY.deployCounterFactualAccount(BICONOMY_MODULE_SETUP, MODULE_SETUP_DATA, index);
         bytes memory data = abi.encodeWithSelector(
             IModuleManager.setupAndEnableModule.selector,
