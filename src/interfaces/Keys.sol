@@ -42,4 +42,6 @@ library Keys {
         keccak256(abi.encode("EXECUTION_GAS_FEE_MULTIPLIER_FACTOR"));
     // @dev key for the base gas limit used when calculating execution fee
     bytes32 public constant EXECUTION_GAS_FEE_BASE_AMOUNT = keccak256(abi.encode("EXECUTION_GAS_FEE_BASE_AMOUNT"));
+
+    // bytes32 public constant SWAP_ORDER_GAS_LIMIT = keccak256(abi.encode("SWAP_ORDER_GAS_LIMIT"));
 }

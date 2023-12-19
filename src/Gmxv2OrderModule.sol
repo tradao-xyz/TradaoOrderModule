@@ -30,7 +30,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     address public profitTaker;
 
     uint256 public simpleGasBase = 1100000; //deployAA, cancelOrder
-    uint256 public newOrderGasBase = 2000000; //every newOrder
+    uint256 public newOrderGasBase = 3000000; //every newOrder
 
     uint256 private constant MAX_PROFIT_TAKE_RATIO = 1000; //10.00%;
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
