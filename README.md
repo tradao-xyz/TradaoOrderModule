@@ -13,13 +13,13 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 
 ## Addresses (Arbitrum One test)
 
--   **Gmxv2OrderModule**: 0xD727C12A59359d4522B6C09F2914eb72dE2e65c4
+-   **Gmxv2OrderModule**: 0x06a3BBADE730771E5b4a9d7a5cfdD5Af6f37Cb65
 -   **BiconomyModuleSetup**: 0x2692b7d240288fEEA31139d4067255E31Fe71a79
 -   **TimelockController**: 
 -   **Operator**: 0xAbc2E7AAD178C8f3DF2bdE0d1F2ae8a4DCdFcbD7
--   **Owner of Gmxv2OrderModule**: 
+-   **Owner of Gmxv2OrderModule**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8
 -   **Owner of BiconomyModuleSetup**: TimelockController
--   **Proposer and Executor of TimelockController**: 0xAbc2E7AAD178C8f3DF2bdE0d1F2ae8a4DCdFcbD7
+-   **Proposer and Executor of TimelockController**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8
 -   **Referrals**: 0xC8F9b1A0a120eFA05EEeb28B10b14FdE18Bb0F50
 
 ## Usage
