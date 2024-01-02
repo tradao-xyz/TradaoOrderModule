@@ -36,7 +36,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address private constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
     IDataStore private constant DATASTORE = IDataStore(0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8);
-    bytes32 private constant REFERRALCODE = 0x74726164616f0000000000000000000000000000000000000000000000000000; //tradao
+    bytes32 private constant REFERRALCODE = 0x636f707974726164650000000000000000000000000000000000000000000000; //copytrade
     address private constant REFERRALSTORAGE = 0xe6fab3F0c7199b0d34d7FbE83394fc0e0D06e99d;
     ISmartAccountFactory private constant BICONOMY_FACTORY =
         ISmartAccountFactory(0x000000a56Aaca3e9a4C479ea6b6CD0DbcB6634F5);
