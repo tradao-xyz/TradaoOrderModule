@@ -16,8 +16,9 @@ import "./interfaces/IWNT.sol";
 import "./interfaces/IExchangeRouter.sol";
 import "./interfaces/IReferrals.sol";
 import "./interfaces/IOrderCallbackReceiver.sol";
+import "./interfaces/IProfitShare.sol";
 
-//v1.3.0
+//v1.4.0
 //Arbitrum equipped
 //Operator should approve WETH to this contract
 contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
@@ -25,14 +26,11 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     mapping(address => address) public operators;
 
     uint256 public ethPriceMultiplier = 10 ** 12; // cache for gas saving;
-    mapping(bytes32 => uint256) public orderCollateral; //[order key, position collateral]
-    uint256 public profitTakeRatio = 0; // 0%
-    address public profitTaker;
+    mapping(bytes32 => ProfitTakeParam) public orderCollateral; //[order key, position collateral]
 
     uint256 public simpleGasBase = 1100000; //deployAA, cancelOrder
     uint256 public newOrderGasBase = 2500000; //every newOrder
 
-    uint256 private constant MAX_PROFIT_TAKE_RATIO = 1000; //10.00%;
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address private constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
     IDataStore private constant DATASTORE = IDataStore(0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8);
@@ -55,11 +53,12 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     IReferrals private constant REFERRALS = IReferrals(0xC8F9b1A0a120eFA05EEeb28B10b14FdE18Bb0F50);
     address private constant ORDER_HANDLER = 0x352f684ab9e97a6321a13CF03A61316B681D9fD2;
     bytes32 private constant COLLATERAL_AMOUNT = 0xb88da5cd71628783263477a6261c2906e380aa32e85e2e87b2463bbdc1127221; //keccak256(abi.encode("COLLATERAL_AMOUNT"));
-    uint256 private constant CALLBACK_GAS_LIMIT = 100000; //estimated
+    uint256 private constant CALLBACK_GAS_LIMIT = 200000; //estimated
     uint256 private constant MIN_PROFIT_TAKE_BASE = 5 * USDC_MULTIPLIER;
+    uint256 private constant MAX_PROFIT_TAKE_RATIO = 800; //8.00%;
+    IProfitShare private constant PROFIT_SHARE = IProfitShare(0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5); //todo
 
     event GasBaseUpdated(uint256 simple, uint256 newOrder);
-    event ProfitTakerTransferred(address indexed previousTaker, address indexed newTaker);
     event EnabledOperator(address indexed operator);
     event DisabledOperator(address indexed operator);
     event NewSmartAccount(address indexed creator, address userEOA, uint96 number, address smartAccount);
@@ -84,7 +83,6 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     );
     event OrderCancelled(address indexed aa, bytes32 orderKey);
     event PayGasFailed(address indexed aa, uint256 gasFeeEth, uint256 ethPrice, uint256 aaUSDCBalance);
-    event ProfitTakeRatioUpdated(uint256 prevRatio, uint256 currentRatio);
     event TakeProfitSuccess(address indexed account, bytes32 orderKey, uint256 amount, address to);
     event TakeProfitFailed(address indexed account, bytes32 orderKey, Enum.TakeProfitFailureReason reason);
 
@@ -112,6 +110,11 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         address smartAccount;
     }
 
+    struct ProfitTakeParam {
+        address followee;
+        uint256 prevCollateral;
+    }
+
     /**
      * @dev Only allows addresses with the operator role to call the function.
      */
@@ -125,18 +128,10 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         _;
     }
 
-    constructor(address initialOperator, address initialProfitTaker) Ownable(msg.sender) {
+    constructor(address initialOperator) Ownable(msg.sender) {
         operators[initialOperator] = SENTINEL_OPERATORS;
         operators[SENTINEL_OPERATORS] = initialOperator;
-        profitTaker = initialProfitTaker;
         emit EnabledOperator(initialOperator);
-        emit ProfitTakerTransferred(address(0), initialProfitTaker);
-    }
-
-    function transferProfitTaker(address newProfitTaker) external onlyOwner {
-        address oldTaker = profitTaker;
-        profitTaker = newProfitTaker;
-        emit ProfitTakerTransferred(oldTaker, newProfitTaker);
     }
 
     function enableOperator(address _operator) external onlyOwner {
@@ -348,8 +343,10 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
 
             if (isSaveCollateral) {
                 //save position collateral
-                orderCollateral[orderKey] =
-                    getCollateral(_orderParam.smartAccount, _orderBase.market, USDC, _orderBase.isLong);
+                orderCollateral[orderKey] = ProfitTakeParam(
+                    _orderBase.followee,
+                    getCollateral(_orderParam.smartAccount, _orderBase.market, USDC, _orderBase.isLong)
+                );
             }
         }
         return orderKey;
@@ -539,13 +536,6 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         );
     }
 
-    function updateProfitTakeRatio(uint256 _ratio) external onlyOwner {
-        require(_ratio <= MAX_PROFIT_TAKE_RATIO, "400");
-        uint256 _prevRatio = profitTakeRatio;
-        profitTakeRatio = _ratio;
-        emit ProfitTakeRatioUpdated(_prevRatio, _ratio);
-    }
-
     // @dev called after an order execution
     // @param key the key of the order
     // @param order the order that was executed
@@ -553,7 +543,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         external
         onlyOrderHandler
     {
-        uint256 prevCollateral = orderCollateral[key];
+        ProfitTakeParam storage ptp = orderCollateral[key];
+        uint256 prevCollateral = ptp.prevCollateral;
         if (prevCollateral == 0) {
             //exception
             emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.PrevCollateralMissed);
@@ -589,10 +580,21 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         }
 
         //take profit
+        //get profitTakeRatio, can't greater than MAX_PROFIT_TAKE_RATIO
+        address followee = ptp.followee;
+        uint256 profitTakeRatio = PROFIT_SHARE.getProfitTakeRatio(
+            order.addresses.account, order.addresses.market, outputAmount - collateralDelta, followee
+        );
+        if (profitTakeRatio > MAX_PROFIT_TAKE_RATIO) {
+            profitTakeRatio = MAX_PROFIT_TAKE_RATIO;
+        }
+
         uint256 profitTaken = (outputAmount - collateralDelta) * profitTakeRatio / 10000;
-        address _profitTaker = profitTaker;
-        if (_aaTransferUsdc(order.addresses.account, profitTaken, _profitTaker)) {
-            emit TakeProfitSuccess(order.addresses.account, key, profitTaken, _profitTaker);
+        if (_aaTransferUsdc(order.addresses.account, profitTaken, address(PROFIT_SHARE))) {
+            PROFIT_SHARE.distributeProfit(
+                order.addresses.account, order.addresses.market, outputAmount - collateralDelta, followee
+            );
+            emit TakeProfitSuccess(order.addresses.account, key, profitTaken, address(PROFIT_SHARE));
         } else {
             emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.TransferError);
         }
@@ -605,8 +607,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         external
         onlyOrderHandler
     {
-        uint256 prevCollateral = orderCollateral[key];
-        if (prevCollateral > 0) {
+        ProfitTakeParam storage ptp = orderCollateral[key];
+        if (ptp.prevCollateral > 0) {
             emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.Canceled);
             delete orderCollateral[key];
         }
