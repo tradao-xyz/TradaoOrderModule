@@ -34,7 +34,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address private constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
     IDataStore private constant DATASTORE = IDataStore(0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8);
-    bytes32 private constant REFERRALCODE = 0x636f707974726164650000000000000000000000000000000000000000000000; //copytrade
+    bytes32 private constant REFERRALCODE = 0x74726164616f7800000000000000000000000000000000000000000000000000; //tradaox
     address private constant REFERRALSTORAGE = 0xe6fab3F0c7199b0d34d7FbE83394fc0e0D06e99d;
     ISmartAccountFactory private constant BICONOMY_FACTORY =
         ISmartAccountFactory(0x000000a56Aaca3e9a4C479ea6b6CD0DbcB6634F5);
@@ -397,6 +397,9 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     }
 
     function _aaTransferUsdc(address aa, uint256 usdcAmount, address to) internal returns (bool isSuccess) {
+        if (usdcAmount == 0) {
+            return true;
+        }
         bytes memory data = abi.encodeWithSelector(IERC20.transfer.selector, to, usdcAmount);
         isSuccess = IModuleManager(aa).execTransactionFromModule(USDC, 0, data, Enum.Operation.Call);
     }
@@ -406,6 +409,9 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     }
 
     function _aaTransferEth(address aa, uint256 ethAmount, address to) internal returns (bool isSuccess) {
+        if (ethAmount == 0) {
+            return true;
+        }
         isSuccess = IModuleManager(aa).execTransactionFromModule(to, ethAmount, "", Enum.Operation.Call);
     }
 
@@ -585,15 +591,15 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         uint256 profitTakeRatio = PROFIT_SHARE.getProfitTakeRatio(
             order.addresses.account, order.addresses.market, outputAmount - collateralDelta, followee
         );
-        if (profitTakeRatio > MAX_PROFIT_TAKE_RATIO) {
+        if (profitTakeRatio == 0) {
+            return;
+        } else if (profitTakeRatio > MAX_PROFIT_TAKE_RATIO) {
             profitTakeRatio = MAX_PROFIT_TAKE_RATIO;
         }
 
         uint256 profitTaken = (outputAmount - collateralDelta) * profitTakeRatio / 10000;
         if (_aaTransferUsdc(order.addresses.account, profitTaken, address(PROFIT_SHARE))) {
-            PROFIT_SHARE.distributeProfit(
-                order.addresses.account, order.addresses.market, outputAmount - collateralDelta, followee
-            );
+            PROFIT_SHARE.distributeProfit(order.addresses.account, order.addresses.market, followee);
             emit TakeProfitSuccess(order.addresses.account, key, profitTaken, address(PROFIT_SHARE));
         } else {
             emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.TransferError);

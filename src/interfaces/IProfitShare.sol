@@ -7,5 +7,5 @@ interface IProfitShare {
         external
         view
         returns (uint256);
-    function distributeProfit(address account, address market, uint256 profit, address followee) external;
+    function distributeProfit(address account, address market, address followee) external;
 }
