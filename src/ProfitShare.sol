@@ -28,6 +28,7 @@ contract ProfitShare is Ownable, IProfitShare {
         address indexed followee, address follower, uint256 followeeProfitDelta, uint256 platformProfitDelta
     );
     event DiscountorUpdated(address prevDiscountor, address currentDiscountor);
+    event ClaimProfitExpired(address indexed followee, uint256 amount);
 
     constructor() Ownable(msg.sender) {
         updateDefaultPlatformRatio(6250); //default 62.50%
@@ -91,10 +92,12 @@ contract ProfitShare is Ownable, IProfitShare {
 
     function followeeClaim() external {
         uint256 claimable = followeeClaimable[msg.sender];
-        followeeClaimable[msg.sender] = 0;
-        followeeClaimtime[msg.sender] = block.timestamp;
-        IERC20(USDC).transfer(msg.sender, claimable);
-        _afterTransferOut();
+        if (claimable > 0) {
+            followeeClaimable[msg.sender] = 0;
+            followeeClaimtime[msg.sender] = block.timestamp;
+            IERC20(USDC).transfer(msg.sender, claimable);
+            _afterTransferOut();
+        }
     }
 
     function platformClaim() external onlyOwner {
@@ -107,10 +110,13 @@ contract ProfitShare is Ownable, IProfitShare {
     function claimExpired(address followee) external onlyOwner {
         require(block.timestamp - followeeClaimtime[followee] > CLAIM_EXPIRED_TIME, "unexpired");
         uint256 claimable = followeeClaimable[followee];
-        followeeClaimable[followee] = 0;
-        followeeClaimtime[followee] = block.timestamp;
-        IERC20(USDC).transfer(msg.sender, claimable);
-        _afterTransferOut();
+        if (claimable > 0) {
+            followeeClaimable[followee] = 0;
+            followeeClaimtime[followee] = block.timestamp;
+            IERC20(USDC).transfer(msg.sender, claimable);
+            _afterTransferOut();
+            emit ClaimProfitExpired(followee, claimable);
+        }
     }
 
     // @return the amount of tokens transferred in
