@@ -20,6 +20,7 @@ contract ProfitShare is Ownable, IProfitShare {
     uint256 private constant MAX_PROFIT_TAKE_RATIO = 800; //8.00%;
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     uint256 private constant CLAIM_EXPIRED_TIME = 180 days;
+    uint256 private constant RATIO_BASE = 10000;
 
     event ProfitTakeRatioUpdated(uint256 prevRatio, uint256 currentRatio);
     event DefaultPlatformRatio(uint256 prevRatio, uint256 currentRatio);
@@ -46,7 +47,7 @@ contract ProfitShare is Ownable, IProfitShare {
     }
 
     function updateDefaultPlatformRatio(uint256 _ratio) public onlyOwner {
-        require(_ratio <= 10000, "400");
+        require(_ratio <= RATIO_BASE, "400");
         uint256 _prevRatio = platformRatio;
         platformRatio = _ratio;
         emit DefaultPlatformRatio(_prevRatio, _ratio);
@@ -62,7 +63,7 @@ contract ProfitShare is Ownable, IProfitShare {
         address _discountor = discountor;
         if (_discountor != address(0)) {
             uint256 discountRatio = IDiscountor(_discountor).getFollowerDiscount(account, market, profit, followee);
-            return profitTakeRatio * discountRatio / 10000;
+            return profitTakeRatio * discountRatio / RATIO_BASE;
         } else {
             return profitTakeRatio;
         }
@@ -75,13 +76,13 @@ contract ProfitShare is Ownable, IProfitShare {
         address _discountor = discountor;
         if (_discountor != address(0)) {
             uint256 discountRatio = IDiscountor(_discountor).getFolloweeDiscount(account, market, followee);
-            if (discountRatio < 10000) {
-                _platformRatioFinal = _platformRatioFinal * discountRatio / 10000;
+            if (discountRatio < RATIO_BASE) {
+                _platformRatioFinal = _platformRatioFinal * discountRatio / RATIO_BASE;
             }
         }
 
         //save claimable of platform and followee
-        uint256 platformAmount = amountIn * _platformRatioFinal / 10000;
+        uint256 platformAmount = amountIn * _platformRatioFinal / RATIO_BASE;
         uint256 followeeAmount = amountIn - platformAmount;
         emit DistributeProfit(followee, account, followeeAmount, platformAmount);
         platformClaimable = platformClaimable + platformAmount;

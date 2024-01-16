@@ -30,6 +30,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
 
     uint256 public simpleGasBase = 1100000; //deployAA, cancelOrder
     uint256 public newOrderGasBase = 2500000; //every newOrder
+    uint256 public callbackGasLimit = 200000;
 
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address private constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
@@ -53,12 +54,11 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     IReferrals private constant REFERRALS = IReferrals(0xC8F9b1A0a120eFA05EEeb28B10b14FdE18Bb0F50);
     address private constant ORDER_HANDLER = 0x352f684ab9e97a6321a13CF03A61316B681D9fD2;
     bytes32 private constant COLLATERAL_AMOUNT = 0xb88da5cd71628783263477a6261c2906e380aa32e85e2e87b2463bbdc1127221; //keccak256(abi.encode("COLLATERAL_AMOUNT"));
-    uint256 private constant CALLBACK_GAS_LIMIT = 200000; //estimated
     uint256 private constant MIN_PROFIT_TAKE_BASE = 5 * USDC_MULTIPLIER;
     uint256 private constant MAX_PROFIT_TAKE_RATIO = 800; //8.00%;
     IProfitShare private constant PROFIT_SHARE = IProfitShare(0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5); //todo
 
-    event GasBaseUpdated(uint256 simple, uint256 newOrder);
+    event GasBaseUpdated(uint256 simple, uint256 newOrder, uint256 callback);
     event EnabledOperator(address indexed operator);
     event DisabledOperator(address indexed operator);
     event NewSmartAccount(address indexed creator, address userEOA, uint96 number, address smartAccount);
@@ -302,7 +302,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
 
         if (isSaveCollateral) {
             cop.addresses.callbackContract = address(this);
-            cop.numbers.callbackGasLimit = CALLBACK_GAS_LIMIT;
+            cop.numbers.callbackGasLimit = callbackGasLimit;
         }
 
         //send order
@@ -432,7 +432,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     function getExecutionFeeGasLimit(Order.OrderType orderType, bool isSaveCollateral) public view returns (uint256) {
         uint256 gasBase = _estimateExecuteOrderGasLimit(DATASTORE, orderType);
         if (isSaveCollateral) {
-            gasBase = gasBase + CALLBACK_GAS_LIMIT;
+            gasBase = gasBase + callbackGasLimit;
         }
         return _adjustGasLimitForEstimate(gasBase);
     }
@@ -465,7 +465,6 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     }
 
     // @dev adjust the gas usage to pay operator
-    // @param dataStore DataStore
     // @param gasUsed the amount of gas used
     function _adjustGasUsage(uint256 gasUsed, uint256 baseGas) internal view returns (uint256) {
         // the gas cost is estimated based on the gasprice of the request txn
@@ -476,12 +475,19 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         return baseGas + gasLimit;
     }
 
-    function updateGasBase(uint256 _simpleGasBase, uint256 _newOrderGasBase) external onlyOperator {
+    function updateGasBase(uint256 _simpleGasBase, uint256 _newOrderGasBase, uint256 _callbackGasLimit)
+        external
+        onlyOperator
+    {
         uint256 baseGasLimit = DATASTORE.getUint(Keys.EXECUTION_GAS_FEE_BASE_AMOUNT);
-        require(_simpleGasBase < _newOrderGasBase && _newOrderGasBase < baseGasLimit, "400");
+        require(
+            _callbackGasLimit < _simpleGasBase && _simpleGasBase < _newOrderGasBase && _newOrderGasBase < baseGasLimit,
+            "400"
+        );
         simpleGasBase = _simpleGasBase;
         newOrderGasBase = _newOrderGasBase;
-        emit GasBaseUpdated(_simpleGasBase, _newOrderGasBase);
+        callbackGasLimit = _callbackGasLimit;
+        emit GasBaseUpdated(_simpleGasBase, _newOrderGasBase, _callbackGasLimit);
     }
 
     function getPriceFeedPrice() public view returns (uint256) {
