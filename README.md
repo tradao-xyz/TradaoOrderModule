@@ -6,6 +6,7 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 
 -   **Gmxv2OrderModule**: Restrict the operator to only a few operations, include deploy Smart Account, pay gas and create order on behalf of the user.
 -   **BiconomyModuleSetup**: Return module address.
+-   **ProfitShare**: Calculate follower profit share ratio with a discount.
 
 ## Workflow
 
@@ -13,14 +14,15 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 
 ## Addresses (Arbitrum One test)
 
--   **Gmxv2OrderModule**: 0x06a3BBADE730771E5b4a9d7a5cfdD5Af6f37Cb65
+-   **Gmxv2OrderModule**: 0x12238FE90481B16A1FE0fde85231296DB915Ff03
 -   **BiconomyModuleSetup**: 0x2692b7d240288fEEA31139d4067255E31Fe71a79
--   **TimelockController**: 
--   **Operator**: 0xAbc2E7AAD178C8f3DF2bdE0d1F2ae8a4DCdFcbD7
--   **Owner of Gmxv2OrderModule**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8
--   **Owner of BiconomyModuleSetup**: TimelockController
--   **Proposer and Executor of TimelockController**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8
+-   **ProfitShare**: 0xBA6Eed0E234e65124BeA17c014CAc502B4441D64
 -   **Referrals**: 0xC8F9b1A0a120eFA05EEeb28B10b14FdE18Bb0F50
+
+-   **Operator**: 0xad470962Ab06323C6C480bd94bEd4c23f8bA4D05
+-   **Owner of Gmxv2OrderModule**: 0xad470962Ab06323C6C480bd94bEd4c23f8bA4D05
+-   **Owner of BiconomyModuleSetup**: 0xAbc2E7AAD178C8f3DF2bdE0d1F2ae8a4DCdFcbD7
+-   **Owner of ProfitShare**: 0xad470962Ab06323C6C480bd94bEd4c23f8bA4D05
 
 ## Usage
 

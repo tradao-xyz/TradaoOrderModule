@@ -56,7 +56,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     bytes32 private constant COLLATERAL_AMOUNT = 0xb88da5cd71628783263477a6261c2906e380aa32e85e2e87b2463bbdc1127221; //keccak256(abi.encode("COLLATERAL_AMOUNT"));
     uint256 private constant MIN_PROFIT_TAKE_BASE = 5 * USDC_MULTIPLIER;
     uint256 private constant MAX_PROFIT_TAKE_RATIO = 800; //8.00%;
-    IProfitShare private constant PROFIT_SHARE = IProfitShare(0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5); //todo
+    IProfitShare private constant PROFIT_SHARE = IProfitShare(0xBA6Eed0E234e65124BeA17c014CAc502B4441D64);
 
     event GasBaseUpdated(uint256 simple, uint256 newOrder, uint256 callback);
     event EnabledOperator(address indexed operator);
