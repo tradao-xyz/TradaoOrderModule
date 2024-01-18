@@ -168,8 +168,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         if (operators[msg.sender] != address(0)) {
             uint256 ethPrice = getPriceFeedPrice();
             uint256 gasUsed = _adjustGasUsage(startGas - gasleft(), simpleGasBase);
-            //transfer gas fee to TinySwap...
-            isSuccess = _aaTransferUsdc(aa, _calcUsdc(gasUsed * tx.gasprice, ethPrice), msg.sender);
+            isSuccess = _payGas(aa, gasUsed * tx.gasprice, ethPrice);
         }
     }
 
@@ -187,7 +186,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         }
 
         uint256 gasUsed = _adjustGasUsage(startGas - gasleft(), simpleGasBase);
-        _aaTransferEth(smartAccount, gasUsed * tx.gasprice, msg.sender);
+        success = _aaTransferEth(smartAccount, gasUsed * tx.gasprice, msg.sender);
     }
 
     //single order, could contain trigger price
