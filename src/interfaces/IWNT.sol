@@ -11,5 +11,5 @@ pragma solidity ^0.8.0;
 interface IWNT {
     function deposit() external payable;
     function withdraw(uint256 amount) external;
-    function depositTo() external payable;
+    function depositTo(address account) external payable;
 }
