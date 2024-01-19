@@ -18,7 +18,7 @@ import "./interfaces/IReferrals.sol";
 import "./interfaces/IOrderCallbackReceiver.sol";
 import "./interfaces/IProfitShare.sol";
 
-//v1.4.0
+//v1.4.1
 //Arbitrum equipped
 //Operator should approve WETH to this contract
 contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
@@ -28,9 +28,9 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     uint256 public ethPriceMultiplier = 10 ** 12; // cache for gas saving;
     mapping(bytes32 => ProfitTakeParam) public orderCollateral; //[order key, position collateral]
 
-    uint256 public simpleGasBase = 1100000; //deployAA, cancelOrder
-    uint256 public newOrderGasBase = 2500000; //every newOrder
-    uint256 public callbackGasLimit = 200000;
+    uint256 public simpleGasBase = 900000; //deployAA, cancelOrder
+    uint256 public newOrderGasBase = 1500000; //every newOrder
+    uint256 public callbackGasLimit = 130000;
 
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address private constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
@@ -185,8 +185,9 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
             emit OrderCancelled(smartAccount, key);
         }
 
+        uint256 ethPrice = getPriceFeedPrice();
         uint256 gasUsed = _adjustGasUsage(startGas - gasleft(), simpleGasBase);
-        success = _aaTransferEth(smartAccount, gasUsed * tx.gasprice, msg.sender);
+        success = _payGas(smartAccount, gasUsed * tx.gasprice, ethPrice);
     }
 
     //single order, could contain trigger price
@@ -405,13 +406,6 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
 
     function _calcUsdc(uint256 ethAmount, uint256 _ethPrice) internal view returns (uint256 usdcAmount) {
         return ethAmount * _ethPrice * USDC_MULTIPLIER / ETH_MULTIPLIER / ethPriceMultiplier;
-    }
-
-    function _aaTransferEth(address aa, uint256 ethAmount, address to) internal returns (bool isSuccess) {
-        if (ethAmount == 0) {
-            return true;
-        }
-        isSuccess = IModuleManager(aa).execTransactionFromModule(to, ethAmount, "", Enum.Operation.Call);
     }
 
     function _deployAA(address userEOA, uint96 number) internal returns (address) {
