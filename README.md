@@ -25,7 +25,9 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 -   **Owner of BiconomyModuleSetup**: 0xB12f2EFA06A7e7b4569E750Fb83aD9060eAf2F06
 -   **Owner of ProfitShare**: 0xad470962Ab06323C6C480bd94bEd4c23f8bA4D05
 
-### ALL
+### COMMON: 
+
+#### Arbitrum One, OP Mainnet, Polygon Mainnet, BNB Smart Chain Mainnet, BASE, Avalanch C-Chain
 
 -   **BiconomyModuleSetup**: 0x32b9b615a3D848FdEFC958f38a529677A0fc00dD
 -   **Deployer**: 0xB12f2EFA06A7e7b4569E750Fb83aD9060eAf2F06
