@@ -42,7 +42,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     bytes private constant SETREFERRALCODECALLDATA =
         abi.encodeWithSignature("setTraderReferralCodeByUser(bytes32)", REFERRALCODE);
     bytes private constant MODULE_SETUP_DATA = abi.encodeWithSignature("getModuleAddress()"); //0xf004f2f9
-    address private constant BICONOMY_MODULE_SETUP = 0x2692b7d240288fEEA31139d4067255E31Fe71a79;
+    address private constant BICONOMY_MODULE_SETUP = 0x32b9b615a3D848FdEFC958f38a529677A0fc00dD;
     bytes4 private constant OWNERSHIPT_INIT_SELECTOR = 0x2ede3bc0; //bytes4(keccak256("initForSmartAccount(address)"))
     address private constant DEFAULT_ECDSA_OWNERSHIP_MODULE = 0x0000001c5b32F37F5beA87BDD5374eB2aC54eA8e;
     bytes32 private constant ETH_MULTIPLIER_KEY = 0x007b50887d7f7d805ee75efc0a60f8aaee006442b047c7816fc333d6d083cae0; //keccak256(abi.encode(keccak256(abi.encode("PRICE_FEED_MULTIPLIER")), address(WETH)))
@@ -51,7 +51,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     uint256 private constant USDC_MULTIPLIER = 10 ** 6;
     address private constant ORDER_VAULT = 0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5;
     IExchangeRouter private constant EXCHANGE_ROUTER = IExchangeRouter(0x7C68C7866A64FA2160F78EEaE12217FFbf871fa8);
-    IReferrals private constant REFERRALS = IReferrals(0xC8F9b1A0a120eFA05EEeb28B10b14FdE18Bb0F50);
+    IReferrals private constant TRADAO_REFERRALS = IReferrals(0xdb3643FE2693Beb1a78704E937F7C568FdeEeDdf);
     address private constant ORDER_HANDLER = 0x352f684ab9e97a6321a13CF03A61316B681D9fD2;
     bytes32 private constant COLLATERAL_AMOUNT = 0xb88da5cd71628783263477a6261c2906e380aa32e85e2e87b2463bbdc1127221; //keccak256(abi.encode("COLLATERAL_AMOUNT"));
     uint256 private constant MIN_PROFIT_TAKE_BASE = 5 * USDC_MULTIPLIER;
@@ -160,7 +160,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         address aa = _deployAA(userEOA, number);
         setReferralCode(aa);
         if (_referrer != address(0)) {
-            REFERRALS.setReferrerFromModule(aa, _referrer);
+            TRADAO_REFERRALS.setReferrerFromModule(aa, _referrer);
         }
         emit NewSmartAccount(msg.sender, userEOA, number, aa);
         isSuccess = true;
@@ -338,7 +338,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
                 _orderParam.acceptablePrice,
                 orderKey,
                 triggerPrice,
-                REFERRALS.getReferrer(_orderParam.smartAccount)
+                TRADAO_REFERRALS.getReferrer(_orderParam.smartAccount)
             );
 
             if (isSaveCollateral) {

@@ -12,17 +12,23 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 
 ![Alt text](./doc/workflow.png?raw=true "Workflow")
 
-## Addresses (Arbitrum One test)
+## Addresses
 
--   **Gmxv2OrderModule**: 0x12238FE90481B16A1FE0fde85231296DB915Ff03
--   **BiconomyModuleSetup**: 0x2692b7d240288fEEA31139d4067255E31Fe71a79
+### Arbitrum One
+
+-   **Gmxv2OrderModule**: 0xdf55dac0d6651a13900c265133809d68635ae495
 -   **ProfitShare**: 0xBA6Eed0E234e65124BeA17c014CAc502B4441D64
--   **Referrals**: 0xC8F9b1A0a120eFA05EEeb28B10b14FdE18Bb0F50
+-   **Referrals**: 0xdb3643FE2693Beb1a78704E937F7C568FdeEeDdf
 
 -   **Operator**: 0xad470962Ab06323C6C480bd94bEd4c23f8bA4D05
--   **Owner of Gmxv2OrderModule**: 0xad470962Ab06323C6C480bd94bEd4c23f8bA4D05
--   **Owner of BiconomyModuleSetup**: 0xAbc2E7AAD178C8f3DF2bdE0d1F2ae8a4DCdFcbD7
+-   **Owner of Gmxv2OrderModule**: 0xB12f2EFA06A7e7b4569E750Fb83aD9060eAf2F06
+-   **Owner of BiconomyModuleSetup**: 0xB12f2EFA06A7e7b4569E750Fb83aD9060eAf2F06
 -   **Owner of ProfitShare**: 0xad470962Ab06323C6C480bd94bEd4c23f8bA4D05
+
+### ALL
+
+-   **BiconomyModuleSetup**: 0x32b9b615a3D848FdEFC958f38a529677A0fc00dD
+-   **Deployer**: 0xB12f2EFA06A7e7b4569E750Fb83aD9060eAf2F06
 
 ## Usage
 

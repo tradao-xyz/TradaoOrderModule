@@ -4,11 +4,11 @@ pragma solidity ^0.8.20;
 import "./interfaces/IReferrals.sol";
 import "./BiconomyModuleSetup.sol";
 
-contract Referrals is IReferrals {
+contract TradaoReferrals is IReferrals {
     mapping(address => address) private referrals;
 
     BiconomyModuleSetup private constant BICONOMY_MODULE_SETUP =
-        BiconomyModuleSetup(0x2692b7d240288fEEA31139d4067255E31Fe71a79);
+        BiconomyModuleSetup(0x32b9b615a3D848FdEFC958f38a529677A0fc00dD);
 
     function getReferrer(address aa) external view returns (address) {
         return referrals[aa];
