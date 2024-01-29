@@ -662,13 +662,14 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
 
         bytes memory enableNewModuleData = abi.encodeWithSelector(IModuleManager.enableModule.selector, newModule);
         isSuccess = IModuleManager(aa).execTransactionFromModule(aa, 0, enableNewModuleData, Enum.Operation.Call);
-        require(isSuccess, "500");
+        require(isSuccess, "500A");
 
         bytes memory diableThisModuleData =
             abi.encodeWithSelector(ISmartAccount.disableModule.selector, prevModule, newModule);
         isSuccess = IModuleManager(aa).execTransactionFromModule(aa, 0, diableThisModuleData, Enum.Operation.Call);
 
-        require(IModuleManager(aa).isModuleEnabled(newModule), "500");
+        require(IModuleManager(aa).isModuleEnabled(newModule), "500B");
+        require(!IModuleManager(aa).isModuleEnabled(address(this)), "500C");
 
         emit AutoMigrationDone(aa, newModule);
     }
