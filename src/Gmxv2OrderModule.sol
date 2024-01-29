@@ -17,8 +17,11 @@ import "./interfaces/IExchangeRouter.sol";
 import "./interfaces/IReferrals.sol";
 import "./interfaces/IOrderCallbackReceiver.sol";
 import "./interfaces/IProfitShare.sol";
+import "./interfaces/IBiconomyModuleSetup.sol";
+import "./interfaces/ISmartAccount.sol";
+import "./interfaces/IEcdsaOwnershipRegistryModule.sol";
 
-//v1.4.1
+//v1.5.0
 //Arbitrum equipped
 //Operator should approve WETH to this contract
 contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
@@ -31,6 +34,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     uint256 public simpleGasBase = 900000; //deployAA, cancelOrder
     uint256 public newOrderGasBase = 1500000; //every newOrder
     uint256 public callbackGasLimit = 130000;
+
+    mapping(address => bool) public autoMigrationOffList;
 
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address private constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
@@ -96,6 +101,9 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         uint256 triggerPrice
     );
 
+    event AutoMigrationDisabled(address indexed aa, bool isDisable);
+    event AutoMigrationDone(address indexed aa, address newModule);
+
     struct OrderParamBase {
         address followee; //the trader that copy from; 0: not a copy trade.
         address market;
@@ -119,12 +127,12 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
      * @dev Only allows addresses with the operator role to call the function.
      */
     modifier onlyOperator() {
-        require(SENTINEL_OPERATORS != msg.sender && operators[msg.sender] != address(0), "401");
+        require(SENTINEL_OPERATORS != msg.sender && operators[msg.sender] != address(0), "403");
         _;
     }
 
     modifier onlyOrderHandler() {
-        require(msg.sender == ORDER_HANDLER, "401");
+        require(msg.sender == ORDER_HANDLER, "403");
         _;
     }
 
@@ -637,5 +645,31 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     {
         bytes32 key = keccak256(abi.encode(account, market, collateralToken, isLong));
         return DATASTORE.getUint(keccak256(abi.encode(key, COLLATERAL_AMOUNT)));
+    }
+
+    function disableAutoMigration(address aa, bool isDisable) external {
+        require(msg.sender == IEcdsaOwnershipRegistryModule(DEFAULT_ECDSA_OWNERSHIP_MODULE).getOwner(aa), "403");
+        autoMigrationOffList[aa] = isDisable;
+
+        emit AutoMigrationDisabled(aa, isDisable);
+    }
+
+    function migrateModule(address aa, address prevModule) external onlyOperator returns (bool isSuccess) {
+        require(!autoMigrationOffList[aa], "401");
+
+        address newModule = IBiconomyModuleSetup(BICONOMY_MODULE_SETUP).getModuleAddress();
+        require(newModule != address(0) && newModule != address(this), "400");
+
+        bytes memory enableNewModuleData = abi.encodeWithSelector(IModuleManager.enableModule.selector, newModule);
+        isSuccess = IModuleManager(aa).execTransactionFromModule(aa, 0, enableNewModuleData, Enum.Operation.Call);
+        require(isSuccess, "500");
+
+        bytes memory diableThisModuleData =
+            abi.encodeWithSelector(ISmartAccount.disableModule.selector, prevModule, newModule);
+        isSuccess = IModuleManager(aa).execTransactionFromModule(aa, 0, diableThisModuleData, Enum.Operation.Call);
+
+        require(IModuleManager(aa).isModuleEnabled(newModule), "500");
+
+        emit AutoMigrationDone(aa, newModule);
     }
 }

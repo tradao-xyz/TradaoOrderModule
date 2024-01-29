@@ -74,4 +74,10 @@ interface IModuleManager {
      * @return True if the module is enabled
      */
     function isModuleEnabled(address module) external view returns (bool);
+
+    /**
+     * @dev Adds a module to the allowlist.
+     * @notice This SHOULD only be done via userOp or a selfcall.
+     */
+    function enableModule(address module) external;
 }
