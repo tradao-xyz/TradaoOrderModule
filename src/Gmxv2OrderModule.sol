@@ -665,7 +665,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         require(isSuccess, "500A");
 
         bytes memory diableThisModuleData =
-            abi.encodeWithSelector(ISmartAccount.disableModule.selector, prevModule, newModule);
+            abi.encodeWithSelector(ISmartAccount.disableModule.selector, prevModule, address(this));
         isSuccess = IModuleManager(aa).execTransactionFromModule(aa, 0, diableThisModuleData, Enum.Operation.Call);
 
         require(IModuleManager(aa).isModuleEnabled(newModule), "500B");
