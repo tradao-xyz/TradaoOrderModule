@@ -63,7 +63,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     uint256 private constant MAX_PROFIT_TAKE_RATIO = 800; //8.00%;
     IProfitShare private constant PROFIT_SHARE = IProfitShare(0xBA6Eed0E234e65124BeA17c014CAc502B4441D64);
 
-    event GasBaseUpdated(uint256 simple, uint256 newOrder, uint256 callback);
+    event GasBaseUpdated(uint256 simple, uint256 newOrder);
+    event CallbackGasLimitUpdated(uint256 callback);
     event EnabledOperator(address indexed operator);
     event DisabledOperator(address indexed operator);
     event NewSmartAccount(address indexed creator, address userEOA, uint96 number, address smartAccount);
@@ -476,19 +477,18 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         return baseGas + gasLimit;
     }
 
-    function updateGasBase(uint256 _simpleGasBase, uint256 _newOrderGasBase, uint256 _callbackGasLimit)
-        external
-        onlyOperator
-    {
+    function updateGasBase(uint256 _simpleGasBase, uint256 _newOrderGasBase) external onlyOperator {
         uint256 baseGasLimit = DATASTORE.getUint(Keys.EXECUTION_GAS_FEE_BASE_AMOUNT);
-        require(
-            _callbackGasLimit < _simpleGasBase && _simpleGasBase < _newOrderGasBase && _newOrderGasBase < baseGasLimit,
-            "400"
-        );
+        require(_simpleGasBase <= _newOrderGasBase && _newOrderGasBase < baseGasLimit, "400");
         simpleGasBase = _simpleGasBase;
         newOrderGasBase = _newOrderGasBase;
+        emit GasBaseUpdated(_simpleGasBase, _newOrderGasBase);
+    }
+
+    function updateCallbackGasLimit(uint256 _callbackGasLimit) external onlyOperator {
+        require(_callbackGasLimit <= simpleGasBase, "400");
         callbackGasLimit = _callbackGasLimit;
-        emit GasBaseUpdated(_simpleGasBase, _newOrderGasBase, _callbackGasLimit);
+        emit CallbackGasLimitUpdated(_callbackGasLimit);
     }
 
     function getPriceFeedPrice() public view returns (uint256) {
