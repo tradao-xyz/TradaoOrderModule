@@ -31,8 +31,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     uint256 public ethPriceMultiplier = 10 ** 12; // cache for gas saving;
     mapping(bytes32 => ProfitTakeParam) public orderCollateral; //[order key, position collateral]
 
-    uint256 public simpleGasBase = 900000; //deployAA, cancelOrder
-    uint256 public newOrderGasBase = 1500000; //every newOrder
+    uint256 public simpleGasBase = 1200000; //deployAA, cancelOrder
+    uint256 public newOrderGasBase = 2000000; //every newOrder
     uint256 public callbackGasLimit = 200000;
 
     mapping(address => bool) public autoMigrationOffList;
