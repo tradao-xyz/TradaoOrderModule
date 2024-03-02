@@ -21,7 +21,7 @@ import "./interfaces/IBiconomyModuleSetup.sol";
 import "./interfaces/ISmartAccount.sol";
 import "./interfaces/IEcdsaOwnershipRegistryModule.sol";
 
-//v1.5.2
+//v1.6.0
 //Arbitrum equipped
 //Operator should approve WETH to this contract
 contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
@@ -676,5 +676,27 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         require(!IModuleManager(aa).isModuleEnabled(address(this)), "500C");
 
         emit AutoMigrationDone(aa, newModule);
+    }
+
+    function withdraw(address aa, address[] calldata tokenAddresses, uint256[] calldata amounts) external {
+        require(tokenAddresses.length == amounts.length, "400");
+        require(msg.sender == IEcdsaOwnershipRegistryModule(DEFAULT_ECDSA_OWNERSHIP_MODULE).getOwner(aa), "403");
+
+        for (uint256 i = 0; i < tokenAddresses.length; i++) {
+            if (amounts[i] == 0) {
+                continue;
+            }
+
+            if (tokenAddresses[i] == address(0)) {
+                // This is an ETH transfer
+                require(aa.balance >= amounts[i], "400A");
+                IModuleManager(aa).execTransactionFromModule(msg.sender, amounts[i], "", Enum.Operation.Call);
+            } else {
+                // This is an ERC20 token transfer
+                require(IERC20(tokenAddresses[i]).balanceOf(aa) >= amounts[i], "400B");
+                bytes memory data = abi.encodeWithSelector(IERC20.transfer.selector, msg.sender, amounts[i]);
+                IModuleManager(aa).execTransactionFromModule(tokenAddresses[i], 0, data, Enum.Operation.Call);
+            }
+        }
     }
 }
