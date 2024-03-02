@@ -16,7 +16,7 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 
 ### Arbitrum One
 
--   **Gmxv2OrderModule**: 0x580801E4725BAa372f2d9Cc068b5bdf3FF5497d8
+-   **Gmxv2OrderModule**: 0x583bBB891C478A6D2a312dc1c31d51279F7f6a5d
 -   **ProfitShare**: 0xBA6Eed0E234e65124BeA17c014CAc502B4441D64
 -   **Referrals**: 0xdb3643FE2693Beb1a78704E937F7C568FdeEeDdf
 
