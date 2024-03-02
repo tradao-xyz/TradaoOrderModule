@@ -21,7 +21,7 @@ import "./interfaces/IBiconomyModuleSetup.sol";
 import "./interfaces/ISmartAccount.sol";
 import "./interfaces/IEcdsaOwnershipRegistryModule.sol";
 
-//v1.5.0
+//v1.5.2
 //Arbitrum equipped
 //Operator should approve WETH to this contract
 contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
@@ -60,7 +60,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     address private constant ORDER_HANDLER = 0x352f684ab9e97a6321a13CF03A61316B681D9fD2;
     bytes32 private constant COLLATERAL_AMOUNT = 0xb88da5cd71628783263477a6261c2906e380aa32e85e2e87b2463bbdc1127221; //keccak256(abi.encode("COLLATERAL_AMOUNT"));
     uint256 private constant MIN_PROFIT_TAKE_BASE = 5 * USDC_MULTIPLIER;
-    uint256 private constant MAX_PROFIT_TAKE_RATIO = 800; //8.00%;
+    uint256 private constant MAX_PROFIT_TAKE_RATIO = 2000; //20.00%;
     IProfitShare private constant PROFIT_SHARE = IProfitShare(0xBA6Eed0E234e65124BeA17c014CAc502B4441D64);
 
     event GasBaseUpdated(uint256 simple, uint256 newOrder);
@@ -296,7 +296,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
                     triggerPrice,
                     Enum.OrderFailureReason.TransferCollateralToVaultFailed
                 );
-                return 0;
+                return bytes32(0x0000000000000000000000000000000000000000000000000000000000000002); //bytes32(uint256(2));
             }
         }
 
@@ -378,7 +378,9 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         } else {
             //convert ETH to WETH to operator
             bytes memory data = abi.encodeWithSelector(IWNT(WETH).depositTo.selector, msg.sender);
-            isSuccess = IModuleManager(aa).execTransactionFromModule(WETH, totalGasFeeEth, data, Enum.Operation.Call);
+            (bool success, bytes memory returnData) =
+                IModuleManager(aa).execTransactionFromModuleReturnData(WETH, totalGasFeeEth, data, Enum.Operation.Call);
+            isSuccess = success && (returnData.length == 0 || abi.decode(returnData, (bool)));
         }
         if (!isSuccess) {
             emit PayGasFailed(aa, totalGasFeeEth, _ethPrice, IERC20(USDC).balanceOf(aa));
@@ -410,7 +412,9 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
             return true;
         }
         bytes memory data = abi.encodeWithSelector(IERC20.transfer.selector, to, usdcAmount);
-        isSuccess = IModuleManager(aa).execTransactionFromModule(USDC, 0, data, Enum.Operation.Call);
+        (bool success, bytes memory returnData) =
+            IModuleManager(aa).execTransactionFromModuleReturnData(USDC, 0, data, Enum.Operation.Call);
+        return success && (returnData.length == 0 || abi.decode(returnData, (bool)));
     }
 
     function _calcUsdc(uint256 ethAmount, uint256 _ethPrice) internal view returns (uint256 usdcAmount) {
@@ -563,6 +567,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
             emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.PrevCollateralMissed);
             return;
         }
+        address followee = ptp.followee;
         delete orderCollateral[key];
 
         if (eventData.addressItems.items[0].value != USDC) {
@@ -594,7 +599,6 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
 
         //take profit
         //get profitTakeRatio, can't greater than MAX_PROFIT_TAKE_RATIO
-        address followee = ptp.followee;
         uint256 profitTakeRatio = PROFIT_SHARE.getProfitTakeRatio(
             order.addresses.account, order.addresses.market, outputAmount - collateralDelta, followee
         );
