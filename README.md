@@ -19,7 +19,13 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 -   **Gmxv2OrderModule**: 0x583bBB891C478A6D2a312dc1c31d51279F7f6a5d
 -   **ProfitShare**: 0xBA6Eed0E234e65124BeA17c014CAc502B4441D64
 -   **Referrals**: 0xdb3643FE2693Beb1a78704E937F7C568FdeEeDdf
+
+<br />
+
 -   **TimelockController**: 0xF66ba754cA6bF5f333DF02ba159963297a8e965A
+-   **BatchTokenTransfer**: 0x717088c0d8Ddc9dDaD26fe8E3d2E0fb15d7aD0A9
+
+<br />
 
 -   **Operator**: 0xad470962Ab06323C6C480bd94bEd4c23f8bA4D05
 -   **Owner of Gmxv2OrderModule**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8 (multisig)
@@ -27,8 +33,6 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 -   **Owner of ProfitShare**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8 (multisig)
 -   **Proposer of TimelockController**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8 (multisig)
 -   **Executor of TimelockController**: 0x0000000000000000000000000000000000000000 (any address)
-
--   **BatchTokenTransfer**: 0x717088c0d8Ddc9dDaD26fe8E3d2E0fb15d7aD0A9
 
 ### COMMON: 
 
