@@ -28,11 +28,12 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 <br />
 
 -   **Operator**: 0xad470962Ab06323C6C480bd94bEd4c23f8bA4D05
--   **Owner of Gmxv2OrderModule**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8 (multisig)
--   **Owner of BiconomyModuleSetup**: 0xF66ba754cA6bF5f333DF02ba159963297a8e965A (TimelockController)
--   **Owner of ProfitShare**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8 (multisig)
--   **Proposer of TimelockController**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8 (multisig)
--   **Executor of TimelockController**: 0x0000000000000000000000000000000000000000 (any address)
+-   **Owner of Gmxv2OrderModule**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8 (multisig, [transaction](https://arbiscan.io/tx/0x63625559add48e45882c990fac0c34bbae9d31e07c9c5cac3a5b7c050de7a488))
+-   **Owner of BiconomyModuleSetup**: 0xF66ba754cA6bF5f333DF02ba159963297a8e965A (TimelockController, [transaction](https://arbiscan.io/tx/0xcf0cbb1d0ebaec37f9e6cacfc63ed70875fd7fca760dfaf1d1892e2833df8100))
+-   **Owner of ProfitShare**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8 (multisig, [transaction](https://arbiscan.io/tx/0xe99d876e717bde60bad1554524c5de51c816ee552803536d031a30686f91855d))
+-   **Proposer of TimelockController**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8 (multisig, [transaction](https://arbiscan.io/tx/0x41a9bbd93286f673d1e7efa561ad7a8bb7ce56d10f89c141bde603e6208b5506))
+-   **Executor of TimelockController**: 0x0000000000000000000000000000000000000000 (any address, [transaction](https://arbiscan.io/tx/0x41a9bbd93286f673d1e7efa561ad7a8bb7ce56d10f89c141bde603e6208b5506))
+-   **Admin of TimelockController**: Renounced ([transaction](https://arbiscan.io/tx/0xfd9fb29a2cdbb93ce5fd3840afe9944fa336712c75a41f7e30c0becf967fe83e))
 
 ### COMMON: 
 
