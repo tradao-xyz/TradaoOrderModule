@@ -23,7 +23,7 @@ import "./interfaces/IEcdsaOwnershipRegistryModule.sol";
 
 //v1.6.0
 //Arbitrum equipped
-//Operator should approve WETH to this contract
+//Operator should approve WETH to this contract.
 contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     address private constant SENTINEL_OPERATORS = address(0x1);
     mapping(address => address) public operators;
