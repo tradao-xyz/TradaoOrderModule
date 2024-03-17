@@ -30,7 +30,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
 
     uint256 public ethPriceMultiplier = 10 ** 12; // cache for gas saving, ETH's GMX price precision
     mapping(bytes32 => ProfitTakeParam) public orderCollateral; //[order key, position collateral]
-    IPostExecutionHandler public postExecutionHandler;
+    address public postExecutionHandler;
 
     uint256 public simpleGasBase = 1200000; //deployAA, cancelOrder
     uint256 public newOrderGasBase = 2000000; //every newOrder
@@ -558,8 +558,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
             return;
         }
 
-        if (address(postExecutionHandler) != address(0)) {
-            postExecutionHandler.handleOrder(key, order);
+        if (postExecutionHandler != address(0)) {
+            IPostExecutionHandler(postExecutionHandler).handleOrder(key, order);
         }
 
         address followee = ptp.followee;
@@ -707,8 +707,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     }
 
     function updatePostExecutionHandler(address handler) external onlyOwner {
-        address _prev = address(postExecutionHandler);
-        postExecutionHandler = IPostExecutionHandler(handler);
+        address _prev = postExecutionHandler;
+        postExecutionHandler = handler;
         emit PostExecutionHandlerUpdated(_prev, handler);
     }
 }
