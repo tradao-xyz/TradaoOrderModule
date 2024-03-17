@@ -24,6 +24,7 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 
 -   **TimelockController**: 0xF66ba754cA6bF5f333DF02ba159963297a8e965A
 -   **BatchTokenTransfer**: 0x717088c0d8Ddc9dDaD26fe8E3d2E0fb15d7aD0A9
+-   **RebatePlugin**: 0xC7A0b3850A1534eb2E9a99E5023373eD59FC2190
 
 <br />
 
@@ -34,6 +35,7 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 -   **Proposer of TimelockController**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8 (multisig, [transaction](https://arbiscan.io/tx/0x41a9bbd93286f673d1e7efa561ad7a8bb7ce56d10f89c141bde603e6208b5506))
 -   **Executor of TimelockController**: 0x0000000000000000000000000000000000000000 (any address, [transaction](https://arbiscan.io/tx/0x41a9bbd93286f673d1e7efa561ad7a8bb7ce56d10f89c141bde603e6208b5506))
 -   **Admin of TimelockController**: Renounced ([transaction](https://arbiscan.io/tx/0xfd9fb29a2cdbb93ce5fd3840afe9944fa336712c75a41f7e30c0becf967fe83e))
+-   **Owner of RebatePlugin**: 0xB12f2EFA06A7e7b4569E750Fb83aD9060eAf2F06 (transfer to multisig after test)
 
 ### COMMON: 
 
