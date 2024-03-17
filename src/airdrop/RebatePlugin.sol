@@ -27,7 +27,7 @@ contract RebatePlugin is Ownable, IPostExecutionHandler {
     address private constant ARB = 0x912CE59144191C1204E64559FE8253a0e49E6548;
     uint256 private constant ARB_MULTIPLIER = 10 ** 18;
     uint256 private constant ARB_PRICE_MULTIPLIER = 10 ** 12;
-    bytes32 public constant POSITION_FEE_FACTOR = 0x3999256650a6ebfea3dfbd4d56990f4d9048943a0e38ea6aabfc65122556c342; //keccak256(abi.encode("POSITION_FEE_FACTOR"))
+    bytes32 private constant POSITION_FEE_FACTOR = 0x3999256650a6ebfea3dfbd4d56990f4d9048943a0e38ea6aabfc65122556c342; //keccak256(abi.encode("POSITION_FEE_FACTOR"))
 
     event Rebate(
         address indexed account,
@@ -78,12 +78,10 @@ contract RebatePlugin is Ownable, IPostExecutionHandler {
         uint256 ethPrice = getPriceFeedPrice(WETH);
 
         uint256 openFeeRebateAmount = order.numbers.sizeDeltaUsd * getGmxOpenFeeRate(order.addresses.market)
-            * _rebateRate * (ARB_MULTIPLIER * ARB_PRICE_MULTIPLIER) / rebateTokenPrice
-            / ((10 ** 30) * (10 ** 30) * RATE_BASE);
+            / (10 ** 30) * _rebateRate * (ARB_MULTIPLIER * ARB_PRICE_MULTIPLIER / (10 ** 30)) / rebateTokenPrice / RATE_BASE;
 
-        uint256 executionFeeRebateAmount = order.numbers.executionFee * ethPrice * _rebateRate
-            * (ARB_MULTIPLIER * ARB_PRICE_MULTIPLIER) / rebateTokenPrice
-            / (WETH_PRICE_MULTIPLIER * RATE_BASE * WETH_MULTIPLIER);
+        uint256 executionFeeRebateAmount = order.numbers.executionFee * ethPrice / WETH_PRICE_MULTIPLIER * _rebateRate
+            * (ARB_MULTIPLIER * ARB_PRICE_MULTIPLIER / WETH_MULTIPLIER) / rebateTokenPrice / RATE_BASE;
 
         uint256 arbBalance = IERC20Metadata(ARB).balanceOf(address(this));
         uint256 totalRebate = openFeeRebateAmount + executionFeeRebateAmount;
