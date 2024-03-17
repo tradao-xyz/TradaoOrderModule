@@ -8,7 +8,6 @@ import "./interfaces/IDatastore.sol";
 import "./interfaces/Keys.sol";
 import "./interfaces/IPriceFeed.sol";
 import "./interfaces/Precision.sol";
-import "./interfaces/IDatastore.sol";
 import "./interfaces/Enum.sol";
 import "./interfaces/IModuleManager.sol";
 import "./interfaces/ISmartAccountFactory.sol";
@@ -20,20 +19,22 @@ import "./interfaces/IProfitShare.sol";
 import "./interfaces/IBiconomyModuleSetup.sol";
 import "./interfaces/ISmartAccount.sol";
 import "./interfaces/IEcdsaOwnershipRegistryModule.sol";
+import "./interfaces/IPostExecutionHandler.sol";
 
-//v1.6.0
+//v1.7.0
 //Arbitrum equipped
 //Operator should approve WETH to this contract.
 contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     address private constant SENTINEL_OPERATORS = address(0x1);
     mapping(address => address) public operators;
 
-    uint256 public ethPriceMultiplier = 10 ** 12; // cache for gas saving;
+    uint256 public ethPriceMultiplier = 10 ** 12; // cache for gas saving, ETH's GMX price precision
     mapping(bytes32 => ProfitTakeParam) public orderCollateral; //[order key, position collateral]
+    IPostExecutionHandler public postExecutionHandler;
 
     uint256 public simpleGasBase = 1200000; //deployAA, cancelOrder
     uint256 public newOrderGasBase = 2000000; //every newOrder
-    uint256 public callbackGasLimit = 200000;
+    uint256 public callbackGasLimit = 400000;
 
     mapping(address => bool) public autoMigrationOffList;
 
@@ -91,6 +92,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     event PayGasFailed(address indexed aa, uint256 gasFeeEth, uint256 ethPrice, uint256 aaUSDCBalance);
     event TakeProfitSuccess(address indexed account, bytes32 orderKey, uint256 amount, address to);
     event TakeProfitFailed(address indexed account, bytes32 orderKey, Enum.TakeProfitFailureReason reason);
+    event PostExecutionHandlerUpdated(address prevAddress, address currentAddress);
 
     error UnsupportedOrderType();
     error OrderCreationError(
@@ -122,6 +124,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     struct ProfitTakeParam {
         address followee;
         uint256 prevCollateral;
+        address operator;
     }
 
     /**
@@ -207,10 +210,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     {
         uint256 startGasLeft = gasleft();
         uint256 ethPrice = getPriceFeedPrice();
-        bool isSaveCollateral = _orderBase.followee != address(0)
-            && BaseOrderUtils.isDecreaseOrder(_orderBase.orderType) && _orderParam.sizeDeltaUsd > 0;
-        uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType, isSaveCollateral) * tx.gasprice;
-        orderKey = _newOrder(_executionGasFee, triggerPrice, isSaveCollateral, _orderBase, _orderParam);
+        uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType) * tx.gasprice;
+        orderKey = _newOrder(_executionGasFee, triggerPrice, _orderBase, _orderParam);
 
         uint256 gasFeeAmount = _adjustGasUsage(startGasLeft - gasleft(), newOrderGasBase) * tx.gasprice;
         _payGas(
@@ -236,9 +237,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     {
         uint256 lastGasLeft = gasleft();
         uint256 ethPrice = getPriceFeedPrice();
-        bool isSaveCollateral = _orderBase.followee != address(0)
-            && BaseOrderUtils.isDecreaseOrder(_orderBase.orderType) && orderParams[0].sizeDeltaUsd > 0;
-        uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType, isSaveCollateral) * tx.gasprice;
+        uint256 _executionGasFee = getExecutionFeeGasLimit(_orderBase.orderType) * tx.gasprice;
         uint256 multiplierFactor = DATASTORE.getUint(Keys.EXECUTION_GAS_FEE_MULTIPLIER_FACTOR);
         uint256 _newOrderGasBase = newOrderGasBase;
 
@@ -246,7 +245,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         orderKeys = new bytes32[](len);
         for (uint256 i; i < len; i++) {
             OrderParam memory _orderParam = orderParams[i];
-            orderKeys[i] = _newOrder(_executionGasFee, 0, isSaveCollateral, _orderBase, _orderParam);
+            orderKeys[i] = _newOrder(_executionGasFee, 0, _orderBase, _orderParam);
             uint256 gasUsed = lastGasLeft - gasleft();
             lastGasLeft = gasleft();
             uint256 gasFeeAmount = (_newOrderGasBase + Precision.applyFactor(gasUsed, multiplierFactor)) * tx.gasprice;
@@ -264,7 +263,6 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     function _newOrder(
         uint256 _executionGasFee,
         uint256 triggerPrice,
-        bool isSaveCollateral,
         OrderParamBase memory _orderBase,
         OrderParam memory _orderParam
     ) internal returns (bytes32 orderKey) {
@@ -308,11 +306,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         if (!isIncreaseOrder) {
             cop.numbers.initialCollateralDeltaAmount = _orderParam.initialCollateralDeltaAmount;
         }
-
-        if (isSaveCollateral) {
-            cop.addresses.callbackContract = address(this);
-            cop.numbers.callbackGasLimit = callbackGasLimit;
-        }
+        cop.addresses.callbackContract = address(this);
+        cop.numbers.callbackGasLimit = callbackGasLimit;
 
         //send order
         orderKey = _aaCreateOrder(cop);
@@ -350,13 +345,12 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
                 TRADAO_REFERRALS.getReferrer(_orderParam.smartAccount)
             );
 
-            if (isSaveCollateral) {
-                //save position collateral
-                orderCollateral[orderKey] = ProfitTakeParam(
-                    _orderBase.followee,
-                    getCollateral(_orderParam.smartAccount, _orderBase.market, USDC, _orderBase.isLong)
-                );
-            }
+            //save position collateral
+            orderCollateral[orderKey] = ProfitTakeParam(
+                _orderBase.followee,
+                getCollateral(_orderParam.smartAccount, _orderBase.market, USDC, _orderBase.isLong),
+                msg.sender
+            );
         }
         return orderKey;
     }
@@ -435,11 +429,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         return aa;
     }
 
-    function getExecutionFeeGasLimit(Order.OrderType orderType, bool isSaveCollateral) public view returns (uint256) {
-        uint256 gasBase = _estimateExecuteOrderGasLimit(DATASTORE, orderType);
-        if (isSaveCollateral) {
-            gasBase = gasBase + callbackGasLimit;
-        }
+    function getExecutionFeeGasLimit(Order.OrderType orderType) public view returns (uint256) {
+        uint256 gasBase = _estimateExecuteOrderGasLimit(DATASTORE, orderType) + callbackGasLimit;
         return _adjustGasLimitForEstimate(gasBase);
     }
 
@@ -495,6 +486,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         emit CallbackGasLimitUpdated(_callbackGasLimit);
     }
 
+    //return price with token's GMX price precision
     function getPriceFeedPrice() public view returns (uint256) {
         address priceFeedAddress = DATASTORE.getAddress(ETH_PRICE_FEED_KEY);
         IPriceFeed priceFeed = IPriceFeed(priceFeedAddress);
@@ -513,9 +505,9 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         require(_price > 0, "priceFeed");
 
         uint256 price = SafeCast.toUint256(_price);
-        uint256 precision = getPriceFeedMultiplier(DATASTORE);
+        uint256 priceFeedMultiplier = getPriceFeedMultiplier(DATASTORE);
 
-        uint256 adjustedPrice = Precision.mulDiv(price, precision, Precision.FLOAT_PRECISION);
+        uint256 adjustedPrice = Precision.mulDiv(price, priceFeedMultiplier, Precision.FLOAT_PRECISION);
 
         return adjustedPrice;
     }
@@ -561,13 +553,27 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         onlyOrderHandler
     {
         ProfitTakeParam storage ptp = orderCollateral[key];
+        if (ptp.operator == address(0)) {
+            //not a Tradao order
+            return;
+        }
+
+        if (address(postExecutionHandler) != address(0)) {
+            postExecutionHandler.handleOrder(key, order);
+        }
+
+        address followee = ptp.followee;
+        if (followee == address(0) || !BaseOrderUtils.isDecreaseOrder(order.numbers.orderType)) {
+            //not a decrease order, no need to take profit.
+            return;
+        }
+
         uint256 prevCollateral = ptp.prevCollateral;
         if (prevCollateral == 0) {
             //exception
             emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.PrevCollateralMissed);
             return;
         }
-        address followee = ptp.followee;
         delete orderCollateral[key];
 
         if (eventData.addressItems.items[0].value != USDC) {
@@ -585,7 +591,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
 
         uint256 curCollateral = getCollateral(order.addresses.account, order.addresses.market, USDC, order.flags.isLong);
         if (curCollateral >= prevCollateral) {
-            //exception
+            //exception, the realized pnl will be transfered to user's account
             emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.CollateralAmountInversed);
             return;
         }
@@ -627,8 +633,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         ProfitTakeParam storage ptp = orderCollateral[key];
         if (ptp.prevCollateral > 0) {
             emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.Canceled);
-            delete orderCollateral[key];
         }
+        delete orderCollateral[key];
     }
 
     // @dev called after an order has been frozen, see OrderUtils.freezeOrder in OrderHandler for more info
@@ -698,5 +704,11 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
                 IModuleManager(aa).execTransactionFromModule(tokenAddresses[i], 0, data, Enum.Operation.Call);
             }
         }
+    }
+
+    function updatePostExecutionHandler(address handler) external onlyOwner {
+        address _prev = address(postExecutionHandler);
+        postExecutionHandler = IPostExecutionHandler(handler);
+        emit PostExecutionHandlerUpdated(_prev, handler);
     }
 }
