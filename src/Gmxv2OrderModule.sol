@@ -32,8 +32,8 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     mapping(bytes32 => ProfitTakeParam) public orderCollateral; //[order key, position collateral]
     address public postExecutionHandler;
 
-    uint256 public simpleGasBase = 1200000; //deployAA, cancelOrder
-    uint256 public newOrderGasBase = 2000000; //every newOrder
+    uint256 public simpleGasBase = 150000; //deployAA, cancelOrder
+    uint256 public newOrderGasBase = 250000; //every newOrder
     uint256 public callbackGasLimit = 400000;
 
     mapping(address => bool) public autoMigrationOffList;
