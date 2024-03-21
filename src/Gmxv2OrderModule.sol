@@ -140,10 +140,12 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         _;
     }
 
-    constructor(address initialOperator) Ownable(msg.sender) {
-        operators[initialOperator] = SENTINEL_OPERATORS;
-        operators[SENTINEL_OPERATORS] = initialOperator;
-        emit EnabledOperator(initialOperator);
+    constructor(address operator1, address operator2) Ownable(msg.sender) {
+        operators[operator1] = operator2;
+        operators[operator2] = SENTINEL_OPERATORS;
+        operators[SENTINEL_OPERATORS] = operator1;
+        emit EnabledOperator(operator1);
+        emit EnabledOperator(operator2);
     }
 
     function enableOperator(address _operator) external onlyOwner {
