@@ -708,6 +708,15 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         }
     }
 
+    function claimFundingFees(address aa, address[] calldata tokens, address[] calldata markets) external {
+        require(markets.length == tokens.length, "400");
+        require(msg.sender == IEcdsaOwnershipRegistryModule(DEFAULT_ECDSA_OWNERSHIP_MODULE).getOwner(aa), "403");
+
+        bytes memory data =
+            abi.encodeWithSelector(IExchangeRouter.claimFundingFees.selector, markets, tokens, msg.sender);
+        IModuleManager(aa).execTransactionFromModule(address(EXCHANGE_ROUTER), 0, data, Enum.Operation.Call);
+    }
+
     function updatePostExecutionHandler(address handler) external onlyOwner {
         address _prev = postExecutionHandler;
         postExecutionHandler = handler;
