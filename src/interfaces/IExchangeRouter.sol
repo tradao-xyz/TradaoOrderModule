@@ -11,4 +11,10 @@ interface IExchangeRouter {
         external
         payable
         returns (uint256[] memory);
+    function claimCollateral(
+        address[] memory markets,
+        address[] memory tokens,
+        uint256[] memory timeKeys,
+        address receiver
+    ) external payable returns (uint256[] memory);
 }

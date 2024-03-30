@@ -717,6 +717,20 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         IModuleManager(aa).execTransactionFromModule(address(EXCHANGE_ROUTER), 0, data, Enum.Operation.Call);
     }
 
+    function claimCollateral(
+        address aa,
+        address[] calldata tokens,
+        address[] calldata markets,
+        uint256[] memory timeKeys
+    ) external {
+        require(markets.length == tokens.length && markets.length == timeKeys.length, "400");
+        require(msg.sender == IEcdsaOwnershipRegistryModule(DEFAULT_ECDSA_OWNERSHIP_MODULE).getOwner(aa), "403");
+
+        bytes memory data =
+            abi.encodeWithSelector(IExchangeRouter.claimCollateral.selector, markets, tokens, timeKeys, msg.sender);
+        IModuleManager(aa).execTransactionFromModule(address(EXCHANGE_ROUTER), 0, data, Enum.Operation.Call);
+    }
+
     function updatePostExecutionHandler(address handler) external onlyOwner {
         address _prev = postExecutionHandler;
         postExecutionHandler = handler;
