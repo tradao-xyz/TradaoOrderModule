@@ -39,10 +39,14 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 
 ### COMMON: 
 
-#### Arbitrum One, OP Mainnet, Polygon Mainnet, BNB Smart Chain Mainnet, BASE, Avalanch C-Chain
+#### Arbitrum One, OP Mainnet, Polygon Mainnet, BNB Smart Chain Mainnet, BASE, Avalanch C-Chain, Ethereum Mainnet
 
 -   **BiconomyModuleSetup**: 0x32b9b615a3D848FdEFC958f38a529677A0fc00dD
 -   **Deployer**: 0xB12f2EFA06A7e7b4569E750Fb83aD9060eAf2F06
+
+#### Ethereum Mainnet
+
+-   **PlaceholderModule**: 0xb1B645011A893DACe075d2e153149574aD327AC0
 
 ## Usage
 
