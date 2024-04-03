@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.20;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
+import {OwnableUpgradeable} from "./upgradable/OwnableUpgradeable.sol";
+import {UUPSUpgradeable} from "./upgradable/UUPSUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interfaces/BaseOrderUtils.sol";
 import "./interfaces/IDatastore.sol";
 import "./interfaces/Keys.sol";
 import "./interfaces/IPriceFeed.sol";
-import "./interfaces/Precision.sol";
 import "./interfaces/Enum.sol";
 import "./interfaces/IModuleManager.sol";
 import "./interfaces/ISmartAccountFactory.sol";
@@ -17,27 +18,23 @@ import "./interfaces/IReferrals.sol";
 import "./interfaces/IOrderCallbackReceiver.sol";
 import "./interfaces/IProfitShare.sol";
 import "./interfaces/IBiconomyModuleSetup.sol";
-import "./interfaces/ISmartAccount.sol";
 import "./interfaces/IEcdsaOwnershipRegistryModule.sol";
 import "./interfaces/IPostExecutionHandler.sol";
 
-//v1.7.0
+//v2.0.0
 //Arbitrum equipped
-//Operator should approve WETH to this contract.
-contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
-    address private constant SENTINEL_OPERATORS = address(0x1);
+contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable, IOrderCallbackReceiver {
     mapping(address => address) public operators;
-
-    uint256 public ethPriceMultiplier = 10 ** 12; // cache for gas saving, ETH's GMX price precision
     mapping(bytes32 => ProfitTakeParam) public orderCollateral; //[order key, position collateral]
+
+    uint256 public ethPriceMultiplier; // cache for gas saving, ETH's GMX price precision
     address public postExecutionHandler;
 
-    uint256 public simpleGasBase = 150000; //deployAA, cancelOrder
-    uint256 public newOrderGasBase = 250000; //every newOrder
-    uint256 public callbackGasLimit = 400000;
+    uint256 public simpleGasBase; //deployAA, cancelOrder
+    uint256 public newOrderGasBase; //every newOrder
+    uint256 public callbackGasLimit;
 
-    mapping(address => bool) public autoMigrationOffList;
-
+    address private constant SENTINEL_OPERATORS = address(0x1);
     address private constant USDC = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address private constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
     IDataStore private constant DATASTORE = IDataStore(0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8);
@@ -63,6 +60,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     uint256 private constant MIN_PROFIT_TAKE_BASE = 5 * USDC_MULTIPLIER;
     uint256 private constant MAX_PROFIT_TAKE_RATIO = 2000; //20.00%;
     IProfitShare private constant PROFIT_SHARE = IProfitShare(0xBA6Eed0E234e65124BeA17c014CAc502B4441D64);
+    uint256 private constant FLOAT_PRECISION = 10 ** 30;
 
     event GasBaseUpdated(uint256 simple, uint256 newOrder);
     event CallbackGasLimitUpdated(uint256 callback);
@@ -104,9 +102,6 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         uint256 triggerPrice
     );
 
-    event AutoMigrationDisabled(address indexed aa, bool isDisable);
-    event AutoMigrationDone(address indexed aa, address newModule);
-
     struct OrderParamBase {
         address followee; //the trader that copy from; 0: not a copy trade.
         address market;
@@ -140,12 +135,23 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         _;
     }
 
-    constructor(address operator1, address operator2) Ownable(msg.sender) {
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address operator1, address operator2) public initializer {
+        __Ownable_init(msg.sender);
+
         operators[operator1] = operator2;
         operators[operator2] = SENTINEL_OPERATORS;
         operators[SENTINEL_OPERATORS] = operator1;
         emit EnabledOperator(operator1);
         emit EnabledOperator(operator2);
+
+        ethPriceMultiplier = 10 ** 12; // cache for gas saving, ETH's GMX price precision
+        simpleGasBase = 150000; //deployAA, cancelOrder
+        newOrderGasBase = 250000; //every newOrder
+        callbackGasLimit = 400000;
     }
 
     function enableOperator(address _operator) external onlyOwner {
@@ -167,6 +173,14 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         delete operators[_operator];
         emit DisabledOperator(_operator);
     }
+
+    function updatePostExecutionHandler(address handler) external onlyOwner {
+        address _prev = postExecutionHandler;
+        postExecutionHandler = handler;
+        emit PostExecutionHandlerUpdated(_prev, handler);
+    }
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     function deployAA(address userEOA, uint96 number, address _referrer) external returns (bool isSuccess) {
         uint256 startGas = gasleft();
@@ -218,9 +232,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         uint256 gasFeeAmount = _adjustGasUsage(startGasLeft - gasleft(), newOrderGasBase) * tx.gasprice;
         _payGas(
             _orderParam.smartAccount,
-            orderKey == 0x0000000000000000000000000000000000000000000000000000000000000001
-                ? gasFeeAmount
-                : gasFeeAmount + _executionGasFee,
+            orderKey == bytes32(uint256(1)) ? gasFeeAmount : gasFeeAmount + _executionGasFee,
             ethPrice
         );
     }
@@ -250,12 +262,10 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
             orderKeys[i] = _newOrder(_executionGasFee, 0, _orderBase, _orderParam);
             uint256 gasUsed = lastGasLeft - gasleft();
             lastGasLeft = gasleft();
-            uint256 gasFeeAmount = (_newOrderGasBase + Precision.applyFactor(gasUsed, multiplierFactor)) * tx.gasprice;
+            uint256 gasFeeAmount = (_newOrderGasBase + (gasUsed * multiplierFactor / FLOAT_PRECISION)) * tx.gasprice;
             _payGas(
                 _orderParam.smartAccount,
-                orderKeys[i] == 0x0000000000000000000000000000000000000000000000000000000000000001
-                    ? gasFeeAmount
-                    : gasFeeAmount + _executionGasFee,
+                orderKeys[i] == bytes32(uint256(1)) ? gasFeeAmount : gasFeeAmount + _executionGasFee,
                 ethPrice
             );
         }
@@ -280,7 +290,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
                 triggerPrice,
                 Enum.OrderFailureReason.PayExecutionFeeFailed
             );
-            return bytes32(0x0000000000000000000000000000000000000000000000000000000000000001); //bytes32(uint256(1))
+            return bytes32(uint256(1));
         }
 
         bool isIncreaseOrder = BaseOrderUtils.isIncreaseOrder(_orderBase.orderType);
@@ -296,7 +306,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
                     triggerPrice,
                     Enum.OrderFailureReason.TransferCollateralToVaultFailed
                 );
-                return bytes32(0x0000000000000000000000000000000000000000000000000000000000000002); //bytes32(uint256(2));
+                return bytes32(uint256(2));
             }
         }
 
@@ -432,7 +442,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     }
 
     function getExecutionFeeGasLimit(Order.OrderType orderType) public view returns (uint256) {
-        uint256 gasBase = _estimateExecuteOrderGasLimit(DATASTORE, orderType) + callbackGasLimit;
+        uint256 gasBase = _estimateExecuteOrderGasLimit(orderType) + callbackGasLimit;
         return _adjustGasLimitForEstimate(gasBase);
     }
 
@@ -443,21 +453,17 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     function _adjustGasLimitForEstimate(uint256 estimatedGasLimit) internal view returns (uint256) {
         uint256 baseGasLimit = DATASTORE.getUint(Keys.ESTIMATED_GAS_FEE_BASE_AMOUNT);
         uint256 multiplierFactor = DATASTORE.getUint(Keys.ESTIMATED_GAS_FEE_MULTIPLIER_FACTOR);
-        return baseGasLimit + Precision.applyFactor(estimatedGasLimit, multiplierFactor);
+        return baseGasLimit + (estimatedGasLimit * multiplierFactor / FLOAT_PRECISION);
     }
 
     // @dev the estimated gas limit for orders
-    function _estimateExecuteOrderGasLimit(IDataStore dataStore, Order.OrderType orderType)
-        internal
-        view
-        returns (uint256)
-    {
+    function _estimateExecuteOrderGasLimit(Order.OrderType orderType) internal view returns (uint256) {
         if (BaseOrderUtils.isIncreaseOrder(orderType)) {
-            return dataStore.getUint(Keys.increaseOrderGasLimitKey());
+            return DATASTORE.getUint(Keys.INCREASE_ORDER_GAS_LIMIT);
         }
 
         if (BaseOrderUtils.isDecreaseOrder(orderType)) {
-            return dataStore.getUint(Keys.decreaseOrderGasLimitKey()) + dataStore.getUint(Keys.singleSwapGasLimitKey());
+            return DATASTORE.getUint(Keys.DECREASE_ORDER_GAS_LIMIT) + DATASTORE.getUint(Keys.SINGLE_SWAP_GAS_LIMIT);
         }
 
         revert UnsupportedOrderType();
@@ -470,7 +476,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         // the actual cost may be higher if the gasprice is higher in the execution txn
         // the multiplierFactor should be adjusted to account for this
         uint256 multiplierFactor = DATASTORE.getUint(Keys.EXECUTION_GAS_FEE_MULTIPLIER_FACTOR);
-        uint256 gasLimit = Precision.applyFactor(gasUsed, multiplierFactor);
+        uint256 gasLimit = (gasUsed * multiplierFactor / FLOAT_PRECISION);
         return baseGas + gasLimit;
     }
 
@@ -490,8 +496,7 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
 
     //return price with token's GMX price precision
     function getPriceFeedPrice() public view returns (uint256) {
-        address priceFeedAddress = DATASTORE.getAddress(ETH_PRICE_FEED_KEY);
-        IPriceFeed priceFeed = IPriceFeed(priceFeedAddress);
+        IPriceFeed priceFeed = IPriceFeed(DATASTORE.getAddress(ETH_PRICE_FEED_KEY));
 
         (
             /* uint80 roundID */
@@ -504,14 +509,9 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
             /* uint80 answeredInRound */
         ) = priceFeed.latestRoundData();
 
-        require(_price > 0, "priceFeed");
+        require(_price > 0, "500P");
 
-        uint256 price = SafeCast.toUint256(_price);
-        uint256 priceFeedMultiplier = getPriceFeedMultiplier(DATASTORE);
-
-        uint256 adjustedPrice = Precision.mulDiv(price, priceFeedMultiplier, Precision.FLOAT_PRECISION);
-
-        return adjustedPrice;
+        return uint256(_price) * getPriceFeedMultiplier() / FLOAT_PRECISION;
     }
 
     // @dev get the multiplier value to convert the external price feed price to the price of 1 unit of the token
@@ -526,19 +526,15 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     // @param dataStore DataStore
     // @param token the token to get the price feed multiplier for
     // @return the price feed multipler
-    function getPriceFeedMultiplier(IDataStore dataStore) public view returns (uint256) {
-        uint256 multiplier = dataStore.getUint(ETH_MULTIPLIER_KEY);
-
+    function getPriceFeedMultiplier() public view returns (uint256) {
+        uint256 multiplier = DATASTORE.getUint(ETH_MULTIPLIER_KEY);
         require(multiplier > 0, "500");
-
         return multiplier;
     }
 
     function updateEthPriceMultiplier() external {
-        address priceFeedAddress = DATASTORE.getAddress(ETH_PRICE_FEED_KEY);
-        IPriceFeed priceFeed = IPriceFeed(priceFeedAddress);
-        uint256 priceFeedDecimal = uint256(IPriceFeed(priceFeed).decimals());
-        ethPriceMultiplier = (10 ** priceFeedDecimal) * getPriceFeedMultiplier(DATASTORE) / (10 ** 30);
+        IPriceFeed priceFeed = IPriceFeed(DATASTORE.getAddress(ETH_PRICE_FEED_KEY));
+        ethPriceMultiplier = (10 ** uint256(priceFeed.decimals())) * getPriceFeedMultiplier() / (10 ** 30);
     }
 
     function setReferralCode(address smartAccount) public returns (bool isSuccess) {
@@ -642,7 +638,16 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     // @dev called after an order has been frozen, see OrderUtils.freezeOrder in OrderHandler for more info
     // @param key the key of the order
     // @param order the order that was frozen
-    function afterOrderFrozen(bytes32, Order.Props memory, EventUtils.EventLogData memory) external onlyOrderHandler {}
+    function afterOrderFrozen(bytes32 key, Order.Props memory order, EventUtils.EventLogData memory)
+        external
+        onlyOrderHandler
+    {
+        ProfitTakeParam storage ptp = orderCollateral[key];
+        if (ptp.prevCollateral > 0) {
+            emit TakeProfitFailed(order.addresses.account, key, Enum.TakeProfitFailureReason.Frozen);
+        }
+        delete orderCollateral[key];
+    }
 
     // @dev get the key for a position, then get the collateral of the position
     // @param account the position's account
@@ -657,33 +662,6 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
     {
         bytes32 key = keccak256(abi.encode(account, market, collateralToken, isLong));
         return DATASTORE.getUint(keccak256(abi.encode(key, COLLATERAL_AMOUNT)));
-    }
-
-    function disableAutoMigration(address aa, bool isDisable) external {
-        require(msg.sender == IEcdsaOwnershipRegistryModule(DEFAULT_ECDSA_OWNERSHIP_MODULE).getOwner(aa), "403");
-        autoMigrationOffList[aa] = isDisable;
-
-        emit AutoMigrationDisabled(aa, isDisable);
-    }
-
-    function migrateModule(address aa, address prevModule) external onlyOperator returns (bool isSuccess) {
-        require(!autoMigrationOffList[aa], "401");
-
-        address newModule = IBiconomyModuleSetup(BICONOMY_MODULE_SETUP).getModuleAddress();
-        require(newModule != address(0) && newModule != address(this), "400");
-
-        bytes memory enableNewModuleData = abi.encodeWithSelector(IModuleManager.enableModule.selector, newModule);
-        isSuccess = IModuleManager(aa).execTransactionFromModule(aa, 0, enableNewModuleData, Enum.Operation.Call);
-        require(isSuccess, "500A");
-
-        bytes memory diableThisModuleData =
-            abi.encodeWithSelector(ISmartAccount.disableModule.selector, prevModule, address(this));
-        isSuccess = IModuleManager(aa).execTransactionFromModule(aa, 0, diableThisModuleData, Enum.Operation.Call);
-
-        require(IModuleManager(aa).isModuleEnabled(newModule), "500B");
-        require(!IModuleManager(aa).isModuleEnabled(address(this)), "500C");
-
-        emit AutoMigrationDone(aa, newModule);
     }
 
     function withdraw(address aa, address[] calldata tokenAddresses, uint256[] calldata amounts) external {
@@ -729,11 +707,5 @@ contract Gmxv2OrderModule is Ownable, IOrderCallbackReceiver {
         bytes memory data =
             abi.encodeWithSelector(IExchangeRouter.claimCollateral.selector, markets, tokens, timeKeys, msg.sender);
         IModuleManager(aa).execTransactionFromModule(address(EXCHANGE_ROUTER), 0, data, Enum.Operation.Call);
-    }
-
-    function updatePostExecutionHandler(address handler) external onlyOwner {
-        address _prev = postExecutionHandler;
-        postExecutionHandler = handler;
-        emit PostExecutionHandlerUpdated(_prev, handler);
     }
 }

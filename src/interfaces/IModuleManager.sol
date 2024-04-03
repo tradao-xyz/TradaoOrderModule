@@ -16,40 +16,9 @@ interface IModuleManager {
      */
     function setupAndEnableModule(address setupContract, bytes memory setupData) external returns (address);
 
-    /**
-     * @dev Allows a Module to execute a Smart Account transaction without any further confirmations.
-     * @param to Destination address of module transaction.
-     * @param value Ether value of module transaction.
-     * @param data Data payload of module transaction.
-     * @param operation Operation type of module transaction.
-     */
-    function execTransactionFromModule(
-        address to,
-        uint256 value,
-        bytes memory data,
-        Enum.Operation operation,
-        uint256 txGas
-    ) external returns (bool success);
-
     function execTransactionFromModule(address to, uint256 value, bytes memory data, Enum.Operation operation)
         external
         returns (bool);
-
-    /**
-     * @dev Allows a Module to execute a wallet transaction without any further confirmations and returns data
-     * @param to Destination address of module transaction.
-     * @param value Ether value of module transaction.
-     * @param data Data payload of module transaction.
-     * @param operation Operation type of module transaction.
-     * @param txGas Gas limit for module transaction execution.
-     */
-    function execTransactionFromModuleReturnData(
-        address to,
-        uint256 value,
-        bytes memory data,
-        Enum.Operation operation,
-        uint256 txGas
-    ) external returns (bool success, bytes memory returnData);
 
     function execTransactionFromModuleReturnData(address to, uint256 value, bytes memory data, Enum.Operation operation)
         external

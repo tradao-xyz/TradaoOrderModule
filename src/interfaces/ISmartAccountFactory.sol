@@ -18,17 +18,4 @@ interface ISmartAccountFactory {
     function deployCounterFactualAccount(address moduleSetupContract, bytes calldata moduleSetupData, uint256 index)
         external
         returns (address proxy);
-
-    /**
-     * @notice Allows to find out account address prior to deployment
-     * @param moduleSetupContract address of the module setup contract
-     * @param moduleSetupData data for module setup contract
-     * @param index extra salt that allows to deploy more accounts if needed for same EOA (default 0)
-     * @return _account address of the account
-     */
-    function getAddressForCounterFactualAccount(
-        address moduleSetupContract,
-        bytes calldata moduleSetupData,
-        uint256 index
-    ) external view returns (address _account);
 }

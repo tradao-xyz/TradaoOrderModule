@@ -20,6 +20,7 @@ abstract contract Enum {
         InvalidCollateralToken,
         CollateralAmountInversed,
         TransferError,
-        ProfitTooSmall
+        ProfitTooSmall,
+        Frozen
     }
 }

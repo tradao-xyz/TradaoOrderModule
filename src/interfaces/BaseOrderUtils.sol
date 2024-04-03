@@ -57,37 +57,6 @@ library BaseOrderUtils {
         uint256 minOutputAmount;
     }
 
-    // @dev check if an orderType is a market order
-    // @param orderType the order type
-    // @return whether an orderType is a market order
-    function isMarketOrder(Order.OrderType orderType) internal pure returns (bool) {
-        // a liquidation order is not considered as a market order
-        return orderType == Order.OrderType.MarketSwap || orderType == Order.OrderType.MarketIncrease
-            || orderType == Order.OrderType.MarketDecrease;
-    }
-
-    // @dev check if an orderType is a limit order
-    // @param orderType the order type
-    // @return whether an orderType is a limit order
-    function isLimitOrder(Order.OrderType orderType) internal pure returns (bool) {
-        return orderType == Order.OrderType.LimitSwap || orderType == Order.OrderType.LimitIncrease
-            || orderType == Order.OrderType.LimitDecrease;
-    }
-
-    // @dev check if an orderType is a swap order
-    // @param orderType the order type
-    // @return whether an orderType is a swap order
-    function isSwapOrder(Order.OrderType orderType) internal pure returns (bool) {
-        return orderType == Order.OrderType.MarketSwap || orderType == Order.OrderType.LimitSwap;
-    }
-
-    // @dev check if an orderType is a position order
-    // @param orderType the order type
-    // @return whether an orderType is a position order
-    function isPositionOrder(Order.OrderType orderType) internal pure returns (bool) {
-        return isIncreaseOrder(orderType) || isDecreaseOrder(orderType);
-    }
-
     // @dev check if an orderType is an increase order
     // @param orderType the order type
     // @return whether an orderType is an increase order
@@ -101,12 +70,5 @@ library BaseOrderUtils {
     function isDecreaseOrder(Order.OrderType orderType) internal pure returns (bool) {
         return orderType == Order.OrderType.MarketDecrease || orderType == Order.OrderType.LimitDecrease
             || orderType == Order.OrderType.StopLossDecrease || orderType == Order.OrderType.Liquidation;
-    }
-
-    // @dev check if an orderType is a liquidation order
-    // @param orderType the order type
-    // @return whether an orderType is a liquidation order
-    function isLiquidationOrder(Order.OrderType orderType) internal pure returns (bool) {
-        return orderType == Order.OrderType.Liquidation;
     }
 }

@@ -5,10 +5,8 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../BiconomyModuleSetup.sol";
-import "../interfaces/Precision.sol";
 import "../interfaces/IDatastore.sol";
 import "../interfaces/Order.sol";
-import "../interfaces/EventUtils.sol";
 import "../interfaces/IPriceFeed.sol";
 import "../interfaces/IPostExecutionHandler.sol";
 
@@ -28,6 +26,7 @@ contract RebatePlugin is Ownable, IPostExecutionHandler {
     uint256 private constant ARB_MULTIPLIER = 10 ** 18;
     uint256 private constant ARB_PRICE_MULTIPLIER = 10 ** 12;
     bytes32 private constant POSITION_FEE_FACTOR = 0x3999256650a6ebfea3dfbd4d56990f4d9048943a0e38ea6aabfc65122556c342; //keccak256(abi.encode("POSITION_FEE_FACTOR"))
+    uint256 private constant FLOAT_PRECISION = 10 ** 30;
 
     event Rebate(
         address indexed account,
@@ -123,10 +122,10 @@ contract RebatePlugin is Ownable, IPostExecutionHandler {
 
         require(_price > 0, "priceFeed");
 
-        uint256 price = SafeCast.toUint256(_price);
+        uint256 price = toUint256(_price);
         uint256 priceFeedMultiplier = getPriceFeedMultiplier(tokenAddress);
 
-        uint256 adjustedPrice = Precision.mulDiv(price, priceFeedMultiplier, Precision.FLOAT_PRECISION);
+        uint256 adjustedPrice = (price * priceFeedMultiplier / FLOAT_PRECISION);
 
         return adjustedPrice;
     }
@@ -158,5 +157,17 @@ contract RebatePlugin is Ownable, IPostExecutionHandler {
         uint256 positiveImpactFeeRate = DATASTORE.getUint(keccak256(abi.encode(POSITION_FEE_FACTOR, market, true)));
         uint256 nagetiveImpactFeeRate = DATASTORE.getUint(keccak256(abi.encode(POSITION_FEE_FACTOR, market, false)));
         return (positiveImpactFeeRate + nagetiveImpactFeeRate) / 2;
+    }
+
+    /**
+     * @dev Converts a signed int256 into an unsigned uint256.
+     *
+     * Requirements:
+     *
+     * - input must be greater than or equal to 0.
+     */
+    function toUint256(int256 value) internal pure returns (uint256) {
+        require(value >= 0, "500TU");
+        return uint256(value);
     }
 }
