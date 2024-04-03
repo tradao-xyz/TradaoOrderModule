@@ -12,11 +12,16 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 
 ![Alt text](./doc/workflow.png?raw=true "Workflow")
 
+## Governance model
+
+![Alt text](./doc/TradaoModuleProxy.png?raw=true "TradaoModuleProxy")
+
 ## Addresses
 
 ### Arbitrum One
 
--   **Gmxv2OrderModule**: 0x583bBB891C478A6D2a312dc1c31d51279F7f6a5d
+-   **ERC1967Proxy**: 0x6F9a3D73BCa55B63cd2570C236002fD1C5fC5056
+-   **Gmxv2OrderModule**: 0xa0c3a65348648f36e78b0ab04d84b3d3c933cc87 (proxied by the ERC1967Proxy)
 -   **ProfitShare**: 0xBA6Eed0E234e65124BeA17c014CAc502B4441D64
 -   **Referrals**: 0xdb3643FE2693Beb1a78704E937F7C568FdeEeDdf
 
@@ -29,7 +34,7 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 <br />
 
 -   **Operator**: 0xad470962Ab06323C6C480bd94bEd4c23f8bA4D05, 0xAbc2E7AAD178C8f3DF2bdE0d1F2ae8a4DCdFcbD7
--   **Owner of Gmxv2OrderModule**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8 (multisig, [transaction](https://arbiscan.io/tx/0x63625559add48e45882c990fac0c34bbae9d31e07c9c5cac3a5b7c050de7a488))
+-   **Owner of Gmxv2OrderModule**: 0xF66ba754cA6bF5f333DF02ba159963297a8e965A (TimelockController, [transaction](https://arbiscan.io/tx/0xacd1bf633f50a480effcd1069ba41e93d5e89d934394dede21f5eaae2fe5e38b))
 -   **Owner of BiconomyModuleSetup**: 0xF66ba754cA6bF5f333DF02ba159963297a8e965A (TimelockController, [transaction](https://arbiscan.io/tx/0xcf0cbb1d0ebaec37f9e6cacfc63ed70875fd7fca760dfaf1d1892e2833df8100))
 -   **Owner of ProfitShare**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8 (multisig, [transaction](https://arbiscan.io/tx/0xe99d876e717bde60bad1554524c5de51c816ee552803536d031a30686f91855d))
 -   **Proposer of TimelockController**: 0x9a970aF3978198fe88eDdb3c8FCa1915e2CBb2d8 (multisig, [transaction](https://arbiscan.io/tx/0x41a9bbd93286f673d1e7efa561ad7a8bb7ce56d10f89c141bde603e6208b5506))
