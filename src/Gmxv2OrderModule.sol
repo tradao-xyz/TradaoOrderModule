@@ -699,7 +699,7 @@ contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable,
         address aa,
         address[] calldata tokens,
         address[] calldata markets,
-        uint256[] memory timeKeys
+        uint256[] calldata timeKeys
     ) external {
         require(markets.length == tokens.length && markets.length == timeKeys.length, "400");
         require(msg.sender == IEcdsaOwnershipRegistryModule(DEFAULT_ECDSA_OWNERSHIP_MODULE).getOwner(aa), "403");
