@@ -29,7 +29,7 @@ The module complies to Biconomy Abstract Account Version 2.0.0. Contracts consis
 
 -   **TimelockController**: 0xF66ba754cA6bF5f333DF02ba159963297a8e965A
 -   **BatchTokenTransfer**: 0x717088c0d8Ddc9dDaD26fe8E3d2E0fb15d7aD0A9
--   **RebatePlugin**: 0x51d36c03bfE0ACAe2b16bA149B3A2D987496bfA3
+-   **RebatePlugin**: 0x6bfcB7DA12DE2Bfb874A4B1f12Ceb4EDF38470b2
 
 <br />
 

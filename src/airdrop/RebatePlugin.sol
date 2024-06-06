@@ -10,6 +10,7 @@ import "../interfaces/Order.sol";
 import "../interfaces/IPriceFeed.sol";
 import "../interfaces/IPostExecutionHandler.sol";
 
+//v2.1.0
 contract RebatePlugin is Ownable, IPostExecutionHandler {
     using SafeERC20 for IERC20Metadata;
 
@@ -19,9 +20,6 @@ contract RebatePlugin is Ownable, IPostExecutionHandler {
     BiconomyModuleSetup private constant BICONOMY_MODULE_SETUP =
         BiconomyModuleSetup(0x32b9b615a3D848FdEFC958f38a529677A0fc00dD);
     IDataStore private constant DATASTORE = IDataStore(0xFD70de6b91282D8017aA4E741e9Ae325CAb992d8);
-    address private constant WETH = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
-    uint256 private constant WETH_MULTIPLIER = 10 ** 18;
-    uint256 private constant WETH_PRICE_MULTIPLIER = 10 ** 12;
     address private constant ARB = 0x912CE59144191C1204E64559FE8253a0e49E6548;
     uint256 private constant ARB_MULTIPLIER = 10 ** 18;
     uint256 private constant ARB_PRICE_MULTIPLIER = 10 ** 12;
@@ -29,14 +27,7 @@ contract RebatePlugin is Ownable, IPostExecutionHandler {
     uint256 private constant FLOAT_PRECISION = 10 ** 30;
 
     event Rebate(
-        address indexed account,
-        bytes32 indexed orderKey,
-        uint256 volume,
-        uint256 volumeRebate,
-        uint256 executionFee,
-        uint256 executionFeeRebate,
-        uint256 arbPrice,
-        uint256 ethPrice
+        address indexed account, bytes32 indexed orderKey, uint256 volume, uint256 volumeRebate, uint256 arbPrice
     );
     event RebateRateUpdated(uint256 prevRate, uint256 currentRate);
 
@@ -74,29 +65,16 @@ contract RebatePlugin is Ownable, IPostExecutionHandler {
         require(msg.sender == BICONOMY_MODULE_SETUP.getModuleAddress(), "401");
 
         uint256 rebateTokenPrice = getPriceFeedPrice(ARB);
-        uint256 ethPrice = getPriceFeedPrice(WETH);
 
         uint256 openFeeRebateAmount = order.numbers.sizeDeltaUsd * getGmxOpenFeeRate(order.addresses.market)
             / (10 ** 30) * _rebateRate * (ARB_MULTIPLIER * ARB_PRICE_MULTIPLIER / (10 ** 30)) / rebateTokenPrice / RATE_BASE;
 
-        uint256 executionFeeRebateAmount = order.numbers.executionFee * ethPrice / WETH_PRICE_MULTIPLIER * _rebateRate
-            * (ARB_MULTIPLIER * ARB_PRICE_MULTIPLIER / WETH_MULTIPLIER) / rebateTokenPrice / RATE_BASE;
-
         uint256 arbBalance = IERC20Metadata(ARB).balanceOf(address(this));
-        uint256 totalRebate = openFeeRebateAmount + executionFeeRebateAmount;
+        uint256 totalRebate = openFeeRebateAmount;
         if (arbBalance >= totalRebate) {
             IERC20Metadata(ARB).safeTransfer(order.addresses.account, totalRebate);
 
-            emit Rebate(
-                order.addresses.account,
-                key,
-                order.numbers.sizeDeltaUsd,
-                openFeeRebateAmount,
-                order.numbers.executionFee,
-                executionFeeRebateAmount,
-                rebateTokenPrice,
-                ethPrice
-            );
+            emit Rebate(order.addresses.account, key, order.numbers.sizeDeltaUsd, openFeeRebateAmount, rebateTokenPrice);
             return true;
         } else {
             return false;
