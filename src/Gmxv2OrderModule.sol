@@ -21,7 +21,7 @@ import "./interfaces/IBiconomyModuleSetup.sol";
 import "./interfaces/IEcdsaOwnershipRegistryModule.sol";
 import "./interfaces/IPostExecutionHandler.sol";
 
-//v2.0.0
+//v2.1.0
 //Arbitrum equipped
 contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable, IOrderCallbackReceiver {
     mapping(address => address) public operators;
@@ -61,6 +61,7 @@ contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable,
     uint256 private constant MAX_PROFIT_TAKE_RATIO = 2000; //20.00%;
     IProfitShare private constant PROFIT_SHARE = IProfitShare(0xBA6Eed0E234e65124BeA17c014CAc502B4441D64);
     uint256 private constant FLOAT_PRECISION = 10 ** 30;
+    uint256 private constant ORACLE_PRICE_COUNT = 3;
 
     event GasBaseUpdated(uint256 simple, uint256 newOrder);
     event CallbackGasLimitUpdated(uint256 callback);
@@ -406,6 +407,7 @@ contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable,
         params.addresses.market = _orderBase.market;
         params.orderType = _orderBase.orderType;
         params.isLong = _orderBase.isLong;
+        params.autoCancel = true;
 
         //custom part
         params.addresses.receiver = _orderParam.smartAccount;
@@ -452,6 +454,7 @@ contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable,
     // @param estimatedGasLimit the estimated gas limit
     function _adjustGasLimitForEstimate(uint256 estimatedGasLimit) internal view returns (uint256) {
         uint256 baseGasLimit = DATASTORE.getUint(Keys.ESTIMATED_GAS_FEE_BASE_AMOUNT);
+        baseGasLimit += DATASTORE.getUint(Keys.ESTIMATED_GAS_FEE_PER_ORACLE_PRICE) * ORACLE_PRICE_COUNT;
         uint256 multiplierFactor = DATASTORE.getUint(Keys.ESTIMATED_GAS_FEE_MULTIPLIER_FACTOR);
         return baseGasLimit + (estimatedGasLimit * multiplierFactor / FLOAT_PRECISION);
     }
@@ -482,14 +485,14 @@ contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable,
 
     function updateGasBase(uint256 _simpleGasBase, uint256 _newOrderGasBase) external onlyOperator {
         uint256 baseGasLimit = DATASTORE.getUint(Keys.EXECUTION_GAS_FEE_BASE_AMOUNT);
-        require(_simpleGasBase <= _newOrderGasBase && _newOrderGasBase < baseGasLimit, "400");
+        require(_simpleGasBase <= _newOrderGasBase && _newOrderGasBase <= baseGasLimit, "400");
         simpleGasBase = _simpleGasBase;
         newOrderGasBase = _newOrderGasBase;
         emit GasBaseUpdated(_simpleGasBase, _newOrderGasBase);
     }
 
     function updateCallbackGasLimit(uint256 _callbackGasLimit) external onlyOperator {
-        require(_callbackGasLimit <= simpleGasBase, "400");
+        require(_callbackGasLimit <= simpleGasBase + newOrderGasBase, "400");
         callbackGasLimit = _callbackGasLimit;
         emit CallbackGasLimitUpdated(_callbackGasLimit);
     }

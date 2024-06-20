@@ -24,6 +24,7 @@ library BaseOrderUtils {
         Order.DecreasePositionSwapType decreasePositionSwapType;
         bool isLong;
         bool shouldUnwrapNativeToken;
+        bool autoCancel;
         bytes32 referralCode;
     }
 
@@ -34,6 +35,7 @@ library BaseOrderUtils {
     // @param swapPath for order.swapPath
     struct CreateOrderParamsAddresses {
         address receiver;
+        address cancellationReceiver;
         address callbackContract;
         address uiFeeReceiver;
         address market;
