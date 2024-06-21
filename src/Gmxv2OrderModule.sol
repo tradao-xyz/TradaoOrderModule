@@ -21,7 +21,7 @@ import "./interfaces/IBiconomyModuleSetup.sol";
 import "./interfaces/IEcdsaOwnershipRegistryModule.sol";
 import "./interfaces/IPostExecutionHandler.sol";
 
-//v2.1.0
+//v2.1.1
 //Arbitrum equipped
 contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable, IOrderCallbackReceiver {
     mapping(address => address) public operators;
@@ -53,9 +53,9 @@ contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable,
     uint256 private constant ETH_MULTIPLIER = 10 ** 18;
     uint256 private constant USDC_MULTIPLIER = 10 ** 6;
     address private constant ORDER_VAULT = 0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5;
-    IExchangeRouter private constant EXCHANGE_ROUTER = IExchangeRouter(0x7C68C7866A64FA2160F78EEaE12217FFbf871fa8);
+    IExchangeRouter private constant EXCHANGE_ROUTER = IExchangeRouter(0x69C527fC77291722b52649E45c838e41be8Bf5d5);
     IReferrals private constant TRADAO_REFERRALS = IReferrals(0xdb3643FE2693Beb1a78704E937F7C568FdeEeDdf);
-    address private constant ORDER_HANDLER = 0x352f684ab9e97a6321a13CF03A61316B681D9fD2;
+    address private constant ORDER_HANDLER = 0xB0Fc2a48b873da40e7bc25658e5E6137616AC2Ee;
     bytes32 private constant COLLATERAL_AMOUNT = 0xb88da5cd71628783263477a6261c2906e380aa32e85e2e87b2463bbdc1127221; //keccak256(abi.encode("COLLATERAL_AMOUNT"));
     uint256 private constant MIN_PROFIT_TAKE_BASE = 5 * USDC_MULTIPLIER;
     uint256 private constant MAX_PROFIT_TAKE_RATIO = 2000; //20.00%;
@@ -138,21 +138,6 @@ contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable,
 
     constructor() {
         _disableInitializers();
-    }
-
-    function initialize(address operator1, address operator2) public initializer {
-        __Ownable_init(msg.sender);
-
-        operators[operator1] = operator2;
-        operators[operator2] = SENTINEL_OPERATORS;
-        operators[SENTINEL_OPERATORS] = operator1;
-        emit EnabledOperator(operator1);
-        emit EnabledOperator(operator2);
-
-        ethPriceMultiplier = 10 ** 12; // cache for gas saving, ETH's GMX price precision
-        simpleGasBase = 150000; //deployAA, cancelOrder
-        newOrderGasBase = 250000; //every newOrder
-        callbackGasLimit = 400000;
     }
 
     function enableOperator(address _operator) external onlyOwner {
