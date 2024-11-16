@@ -57,13 +57,15 @@ library BaseOrderUtils {
         uint256 executionFee;
         uint256 callbackGasLimit;
         uint256 minOutputAmount;
+        uint256 validFromTime;
     }
 
     // @dev check if an orderType is an increase order
     // @param orderType the order type
     // @return whether an orderType is an increase order
     function isIncreaseOrder(Order.OrderType orderType) internal pure returns (bool) {
-        return orderType == Order.OrderType.MarketIncrease || orderType == Order.OrderType.LimitIncrease;
+        return orderType == Order.OrderType.MarketIncrease || orderType == Order.OrderType.LimitIncrease
+            || orderType == Order.OrderType.StopIncrease;
     }
 
     // @dev check if an orderType is a decrease order

@@ -5,10 +5,9 @@ pragma solidity ^0.8.0;
 // @title Order
 // @dev Struct for orders
 library Order {
-    enum OrderType
-    // @dev MarketSwap: swap token A to token B at the current market price
-    // the order will be cancelled if the minOutputAmount cannot be fulfilled
-    {
+    enum OrderType {
+        // @dev MarketSwap: swap token A to token B at the current market price
+        // the order will be cancelled if the minOutputAmount cannot be fulfilled
         MarketSwap,
         // @dev LimitSwap: swap token A to token B if the minOutputAmount can be fulfilled
         LimitSwap,
@@ -25,7 +24,9 @@ library Order {
         // @dev StopLossDecrease: decrease position if the triggerPrice is reached and the acceptablePrice can be fulfilled
         StopLossDecrease,
         // @dev Liquidation: allows liquidation of positions if the criteria for liquidation are met
-        Liquidation
+        Liquidation,
+        // @dev StopIncrease: increase position if the triggerPrice is reached and the acceptablePrice can be fulfilled
+        StopIncrease
     }
 
     enum DecreasePositionSwapType {
@@ -104,6 +105,7 @@ library Order {
         uint256 minOutputAmount;
         uint256 updatedAtBlock;
         uint256 updatedAtTime;
+        uint256 validFromTime;
     }
 
     // @param isLong whether the order is for a long or short
