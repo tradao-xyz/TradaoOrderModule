@@ -66,7 +66,7 @@ contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable,
     event GasBaseUpdated(uint256 simple, uint256 newOrder);
     event CallbackGasLimitUpdated(uint256 callback);
     event EnabledOperator(address indexed operator);
-    event DisabledOperator(address indexed operator);
+    // event DisabledOperator(address indexed operator);
     event NewSmartAccount(address indexed creator, address userEOA, uint96 number, address smartAccount);
     event OrderCreated(
         address indexed aa,
@@ -87,7 +87,7 @@ contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable,
         uint256 triggerPrice,
         Enum.OrderFailureReason reason
     );
-    event OrderCancelled(address indexed aa, bytes32 orderKey);
+    // event OrderCancelled(address indexed aa, bytes32 orderKey);
     event PayGasFailed(address indexed aa, uint256 gasFeeEth, uint256 ethPrice, uint256 aaUSDCBalance);
     event TakeProfitSuccess(address indexed account, bytes32 orderKey, uint256 amount, address to);
     event TakeProfitFailed(address indexed account, bytes32 orderKey, Enum.TakeProfitFailureReason reason);
@@ -150,15 +150,15 @@ contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable,
         emit EnabledOperator(_operator);
     }
 
-    function disableOperator(address prevoperator, address _operator) external onlyOwner {
-        // Validate operator address and check that it corresponds to operator index.
-        require(
-            _operator != address(0) && _operator != SENTINEL_OPERATORS && operators[prevoperator] == _operator, "400"
-        );
-        operators[prevoperator] = operators[_operator];
-        delete operators[_operator];
-        emit DisabledOperator(_operator);
-    }
+    // function disableOperator(address prevoperator, address _operator) external onlyOwner {
+    //     // Validate operator address and check that it corresponds to operator index.
+    //     require(
+    //         _operator != address(0) && _operator != SENTINEL_OPERATORS && operators[prevoperator] == _operator, "400"
+    //     );
+    //     operators[prevoperator] = operators[_operator];
+    //     delete operators[_operator];
+    //     emit DisabledOperator(_operator);
+    // }
 
     function updatePostExecutionHandler(address handler) external onlyOwner {
         address _prev = postExecutionHandler;
@@ -187,22 +187,22 @@ contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable,
     }
 
     //cancel single order
-    function cancelOrder(address smartAccount, bytes32 key) external onlyOperator returns (bool success) {
-        uint256 startGas = gasleft();
-        require(key > 0, "key");
+    // function cancelOrder(address smartAccount, bytes32 key) external onlyOperator returns (bool success) {
+    //     uint256 startGas = gasleft();
+    //     require(key > 0, "key");
 
-        bytes memory data = abi.encodeWithSelector(EXCHANGE_ROUTER.cancelOrder.selector, key);
-        success = IModuleManager(smartAccount).execTransactionFromModule(
-            address(EXCHANGE_ROUTER), 0, data, Enum.Operation.Call
-        );
-        if (success) {
-            emit OrderCancelled(smartAccount, key);
-        }
+    //     bytes memory data = abi.encodeWithSelector(EXCHANGE_ROUTER.cancelOrder.selector, key);
+    //     success = IModuleManager(smartAccount).execTransactionFromModule(
+    //         address(EXCHANGE_ROUTER), 0, data, Enum.Operation.Call
+    //     );
+    //     if (success) {
+    //         emit OrderCancelled(smartAccount, key);
+    //     }
 
-        uint256 ethPrice = getPriceFeedPrice();
-        uint256 gasUsed = _adjustGasUsage(startGas - gasleft(), simpleGasBase);
-        success = _payGas(smartAccount, gasUsed * tx.gasprice, ethPrice);
-    }
+    //     uint256 ethPrice = getPriceFeedPrice();
+    //     uint256 gasUsed = _adjustGasUsage(startGas - gasleft(), simpleGasBase);
+    //     success = _payGas(smartAccount, gasUsed * tx.gasprice, ethPrice);
+    // }
 
     //single order, could contain trigger price
     function newOrder(uint256 triggerPrice, OrderParamBase memory _orderBase, OrderParam memory _orderParam)
