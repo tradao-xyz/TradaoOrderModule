@@ -21,7 +21,7 @@ import "./interfaces/IBiconomyModuleSetup.sol";
 import "./interfaces/IEcdsaOwnershipRegistryModule.sol";
 import "./interfaces/IPostExecutionHandler.sol";
 
-//v2.2.2
+//v2.3.0
 //Arbitrum equipped
 contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable, IOrderCallbackReceiver {
     mapping(address => address) public operators;
