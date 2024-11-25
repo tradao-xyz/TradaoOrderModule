@@ -53,9 +53,9 @@ contract Gmxv2OrderModule is Initializable, OwnableUpgradeable, UUPSUpgradeable,
     uint256 private constant ETH_MULTIPLIER = 10 ** 18;
     uint256 private constant USDC_MULTIPLIER = 10 ** 6;
     address private constant ORDER_VAULT = 0x31eF83a530Fde1B38EE9A18093A333D8Bbbc40D5;
-    IExchangeRouter private constant EXCHANGE_ROUTER = IExchangeRouter(0x69C527fC77291722b52649E45c838e41be8Bf5d5);
+    IExchangeRouter private constant EXCHANGE_ROUTER = IExchangeRouter(0x900173A66dbD345006C51fA35fA3aB760FcD843b);
     IReferrals private constant TRADAO_REFERRALS = IReferrals(0xdb3643FE2693Beb1a78704E937F7C568FdeEeDdf);
-    address private constant ORDER_HANDLER = 0xB0Fc2a48b873da40e7bc25658e5E6137616AC2Ee;
+    address private constant ORDER_HANDLER = 0xe68CAAACdf6439628DFD2fe624847602991A31eB;
     bytes32 private constant COLLATERAL_AMOUNT = 0xb88da5cd71628783263477a6261c2906e380aa32e85e2e87b2463bbdc1127221; //keccak256(abi.encode("COLLATERAL_AMOUNT"));
     uint256 private constant MIN_PROFIT_TAKE_BASE = 5 * USDC_MULTIPLIER;
     uint256 private constant MAX_PROFIT_TAKE_RATIO = 2000; //20.00%;
